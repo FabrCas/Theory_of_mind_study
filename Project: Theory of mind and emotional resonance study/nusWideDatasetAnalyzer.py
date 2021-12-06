@@ -1,13 +1,10 @@
 import numpy as np
-import os
 import pandas as pd 
-import matplotlib.pyplot as plt
-import seaborn as sns
 import re
 import gc
 import time
 
-
+# file system paths and file names
 pathToDatasetRel = './dataset/nus-wide'
 pathToDatasetAbs = '/home/faber/Documents/EAI1/dataset/nus-wide'
 
@@ -18,7 +15,7 @@ nameDatasetTest = 'nus_wid_test.csv'
 conceptList = 'Concepts81.txt'
 imagesFolder = 'images'
 
-
+testing = False
 
 
 class NusDataset():
@@ -64,6 +61,7 @@ class NusDataset():
                 file.close()
         if (printIt): print(labels)
         self.labels = labels 
+        return labels
             
     
     def extractLabels(self, printIt = False):
@@ -98,19 +96,12 @@ class NusDataset():
         labels.sort()
         if (printIt): print(labels)
         self.labels = labels
+        return labels
         
         # print(typer)
         
     def createEncode(self,labels):
         if (self.labels.size == 0): self.getLabels()
-        
-        
-        # print(self.labels)
-        # print(type(self.labels))
-        # print(labels)
-
-        # print(type(labels))
-        
         
         # parsing the string of labels to a list
         
@@ -137,18 +128,16 @@ class NusDataset():
             print(test_list)
             print(labels)
             raise ValueError('Error during encoding')
-        print(test_list)
-        print(labels)
-        
+
         # print(encoding)
         return encoding
         
         
             
     
-    def splitDataset(self):
+    def splitDataset(self, writeFiles = False):
 
-        writeFiles = False   
+          
         train_list = []
         test_list = []
         
@@ -161,7 +150,7 @@ class NusDataset():
         # test = []
         # validation = []`
         
-        for val in self.data[0:5].values:     # limit to 15 (test)
+        for val in self.data.values:     # limit to 15 (test)
 
             # print(val[2])
             
@@ -172,71 +161,116 @@ class NusDataset():
             # print(elem)
             temp_encoding = self.createEncode(val[1])
             # print(temp_encoding)
-            elem = [*elem,*temp_encoding]
-            # print(elem)
-            
-            
-            
-           
-            if (type_sample == "train"):
+            elem = elem + temp_encoding
+            # elem = [*elem,*temp_encoding]
+
+            if (type_sample == "train"):                
                 train_list.append(elem)
+
                 
             elif(type_sample == "val"):
                 test_list.append(elem)
-            
+        
+        
+        # check this: converting from python list to numpy all the types of data become String
+        # try to convert it here or handle this directly in the main
+        
         self.trainSet = np.array(train_list)
         self.testSet = np.array(test_list)
+        # print(self.trainSet)
         
         
         # do and add  multiple encoding for labels
         
         
         if(writeFiles):
+            columns_names =  []
+            columns_names = self.labels
+            
+            columns_names = np.insert(columns_names,0,'labels')
+            columns_names = np.insert(columns_names,0,"image_name")
+            
+            # print(columns_names)
+            dataframe_train = pd.DataFrame(self.trainSet)
+            dataframe_test =  pd.DataFrame(self.testSet)
+            dataframe_test.columns = columns_names
+            dataframe_train.columns = columns_names
+            
             try:
-                pd.DataFrame(self.trainSet).to_csv(pathToDatasetRel +"/"+ nameDatasetTrain)
-                pd.DataFrame(self.testSet).to_csv(pathToDatasetRel +"/"+ nameDatasetTest)
+                dataframe_train.to_csv(pathToDatasetRel +"/"+ nameDatasetTrain)
+                dataframe_test.to_csv(pathToDatasetRel +"/"+ nameDatasetTest)
             except FileNotFoundError:
-                pd.DataFrame(self.trainSet).to_csv(pathToDatasetAbs +"/"+ nameDatasetTrain)
-                pd.DataFrame(self.testSet).to_csv(pathToDatasetAbs +"/"+ nameDatasetTest)
+                dataframe_train.to_csv(pathToDatasetAbs +"/"+ nameDatasetTrain)
+                dataframe_test.to_csv(pathToDatasetAbs +"/"+ nameDatasetTest)
                 
         print("End creation split, time: {} [s]".format((time.time() -startTime), ))
         
+    
+    
+    def loadSplittedDataset(self):
+        try:
+            train_data = pd.read_csv(pathToDatasetRel + '/' + nameDatasetTrain).iloc[:, 1:]
+            test_data = pd.read_csv(pathToDatasetRel + '/' + nameDatasetTest).iloc[:, 1:]
+        except FileNotFoundError:
+            try:
+                train_data = pd.read_csv(pathToDatasetAbs+ '/' + nameDatasetTrain).iloc[:, 1:]
+                test_data = pd.read_csv(pathToDatasetAbs + '/' + nameDatasetTest).iloc[:, 1:]
+            except FileNotFoundError:
+                self.splitDataset(True)
+                return (self.trainSet,self.testSet)
             
+        # casting all data to string (also the encoding)
+        train_data = train_data.to_numpy(str)
+        test_data = test_data.to_numpy(str)
+        self.trainSet = train_data
+        self.testSet = test_data
+        return(self.trainSet,self.testSet)
+        
+    
     def freeSpace(self):
         gc.collect()
         
         
         
-        
-# ______________________test splitting______________________________
-
-data = NusDataset()
-
-data.splitDataset()
-# print(data.testSet)
-data.getLabels(True)
-
-
-
-# print(type(data.data.values))
-print(len(data.data.values))
-
-
-print(len(data.trainSet))
-# print(data.trainSet[0])
-# print(data.trainSet[1])
-
-print(len(data.testSet))
-# print(data.testSet[0])
-# print(data.testSet[1])
-
-
-# ______________________test encoding_________________________________
-
-
-# print(data.trainSet[0])
-
-# data.createEncode(data.trainSet[0][1])
+if(testing):
+    # ______________________test splitting______________________________
+    
+    data = NusDataset()
+    
+    data.splitDataset(True)
+    # print(data.testSet)
+    data.getLabels(False)
+    
+    
+    
+    # print(type(data.data.values))
+    print(len(data.data.values))
+    print(len(data.trainSet))
+    print(len(data.testSet))
+    
+    print("---------------------------------------------------------\n")
+    print(data.trainSet)
+    print(type(data.trainSet))
+    print("---------------------------------------------------------\n")
+    print(data.testSet)
+    
+    # tr,te = data.loadSplittedDataset()
+    # print("---------------------------------------------------------\n")
+    # print(tr)
+    # print(type(tr))
+    # print("---------------------------------------------------------\n")
+    # print(te)
+    
+    
+    print("---------------------------------------------------------\n")
+    
+    
+    # ______________________test encoding_________________________________
+    
+    
+    print(data.trainSet[0])
+    
+    data.createEncode(data.trainSet[0][1])
 
 
     

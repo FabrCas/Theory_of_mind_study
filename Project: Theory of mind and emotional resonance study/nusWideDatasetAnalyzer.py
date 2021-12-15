@@ -31,7 +31,6 @@ class NusDataset():
         
         self.computeDataFrame()
         
-     
     # read and store data from csv file
     
     def computeDataFrame(self):
@@ -66,8 +65,8 @@ class NusDataset():
     
     def extractLabels(self, printIt = False):
         
-        if (self.data):
-            self.computeDataFrame()
+        # if (self.data):
+        #     self.computeDataFrame()
             
         # final list of labels extracted 
         labels = []
@@ -132,12 +131,9 @@ class NusDataset():
         # print(encoding)
         return encoding
         
-        
-            
+             
     
     def splitDataset(self, writeFiles = False):
-
-          
         train_list = []
         test_list = []
         
@@ -157,7 +153,7 @@ class NusDataset():
             type_sample = val[2]
             
         
-            elem = [val[0],val[1]]
+            elem = [val[0],np.array(val[1])]
             # print(elem)
             temp_encoding = self.createEncode(val[1])
             # print(temp_encoding)
@@ -205,7 +201,13 @@ class NusDataset():
                 
         print("End creation split, time: {} [s]".format((time.time() -startTime), ))
         
-    
+    def stringToList(self, text):
+        text = re.sub("[\[\]']", '', text) # left the comma for separation
+        text = re.sub(" ", '', text)
+        list_text = text.split(',')
+        print(list_text)
+        return list_text
+        
     
     def loadSplittedDataset(self):
         try:
@@ -225,13 +227,45 @@ class NusDataset():
         self.trainSet = train_data
         self.testSet = test_data
         return(self.trainSet,self.testSet)
-        
+
+    # to avoid memory leaks, load separately trainset and testset
     
+    def retrieveTrainingSet(self):
+        try:
+            train_data = pd.read_csv(pathToDatasetRel + '/' + nameDatasetTrain).iloc[:, 1:]
+        except FileNotFoundError:
+            try:
+                train_data = pd.read_csv(pathToDatasetAbs+ '/' + nameDatasetTrain).iloc[:, 1:]
+            except FileNotFoundError:
+                self.splitDataset(True)
+                return (self.trainSet,self.testSet)
+            
+        # casting all data to string (also the encoding)
+
+        train_data = train_data.to_numpy()
+        print(train_data)
+
+        return train_data
+    
+    def retrieveTestSet(self):
+        try:
+            test_data = pd.read_csv(pathToDatasetRel + '/' + nameDatasetTest).iloc[:, 1:]
+        except FileNotFoundError:
+            try:
+                test_data = pd.read_csv(pathToDatasetAbs + '/' + nameDatasetTest).iloc[:, 1:]
+            except FileNotFoundError:
+                self.splitDataset(True)
+                return (self.trainSet,self.testSet)
+            
+        # casting all data to string (also the encoding)
+        test_data = test_data.to_numpy()
+
+        return test_data
+        
     def freeSpace(self):
         gc.collect()
         
-        
-        
+ 
 if(testing):
     # ______________________test splitting______________________________
     

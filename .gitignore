@@ -2,6 +2,14 @@
 # Created by https://www.toptal.com/developers/gitignore/api/images,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=images,python
 
+
+dataset/
+logs/
+models/
+__pycache__/
+results/
+
+
 ### Images ###
 # JPEG
 *.jpg

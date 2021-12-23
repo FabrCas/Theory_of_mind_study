@@ -23,16 +23,16 @@ class Bottleneck_block(nn.Module):
         self.exp_coeff = exp_coeff
 
         # 1st block
-        self.c_1 = nn.Conv2d(n_inCh, n_outCh, kernel_size=1, stride=1, padding=0)
-        self.bn_1 = nn.BatchNorm2d(n_outCh)
+        self.c_1 = nn.Conv2d(n_inCh, n_outCh, kernel_size=1, stride=1, padding=0).half()
+        self.bn_1 = nn.BatchNorm2d(n_outCh).half()
         
         # 2nd block
-        self.c_2 = nn.Conv2d(n_outCh, n_outCh, kernel_size=3, stride=stride, padding=1)
-        self.bn_2 = nn.BatchNorm2d(n_outCh)
+        self.c_2 = nn.Conv2d(n_outCh, n_outCh, kernel_size=3, stride=stride, padding=1).half()
+        self.bn_2 = nn.BatchNorm2d(n_outCh).half()
         
         # 3rd block
-        self.c_3 = nn.Conv2d(n_outCh, n_outCh*self.exp_coeff, kernel_size=1, stride=1, padding=0)
-        self.bn_3 = nn.BatchNorm2d(n_outCh*self.exp_coeff)
+        self.c_3 = nn.Conv2d(n_outCh, n_outCh*self.exp_coeff, kernel_size=1, stride=1, padding=0).half()
+        self.bn_3 = nn.BatchNorm2d(n_outCh*self.exp_coeff).half()
         
         # relu as a.f. for each block 
         self.relu = nn.ReLU()
@@ -82,8 +82,8 @@ class ResNet101(nn.Module):
     
     def _create_net(self):
         # first block
-        self.c_1 = nn.Conv2d(self.n_channels, self.fm_dim[0], kernel_size= 7, stride = 2, padding = 3, bias = False) 
-        self.bn_1 = nn.BatchNorm2d(self.fm_dim[0])
+        self.c_1 = nn.Conv2d(self.n_channels, self.fm_dim[0], kernel_size= 7, stride = 2, padding = 3, bias = False).half()
+        self.bn_1 = nn.BatchNorm2d(self.fm_dim[0]).half()
         self.relu = nn.ReLU()
         self.mp = nn.MaxPool2d(kernel_size= 3, stride = 2, padding= 1)
         
@@ -96,9 +96,9 @@ class ResNet101(nn.Module):
         
         # last block
         self.ap = nn.AdaptiveAvgPool2d((1,1)) # (1,1) output dimension
-        self.fc = nn.Linear(512*self.exp_coeff, self.n_classes)
+        self.fc = nn.Linear(512*self.exp_coeff, self.n_classes).half()
         
-        # self.af_out = nn.Sigmoid() # to use 
+        # self.af_out = nn.Sigmoid() # used directly in the loss function
         
         print(Back.BLACK + Fore.GREEN + "Model created, time {} [s]".format(time.time() - self.initialTime))
         
@@ -107,8 +107,8 @@ class ResNet101(nn.Module):
         
         if stride != 1 or self.input_ch != n_fm*self.exp_coeff: # so downsampling
             ds_layer = nn.Sequential(
-                nn.Conv2d(self.input_ch, n_fm*self.exp_coeff, kernel_size=1, stride=stride),
-                nn.BatchNorm2d(n_fm*self.exp_coeff)
+                nn.Conv2d(self.input_ch, n_fm*self.exp_coeff, kernel_size=1, stride=stride).half(),
+                nn.BatchNorm2d(n_fm*self.exp_coeff).half()
                 )
         else:
             ds_layer = None

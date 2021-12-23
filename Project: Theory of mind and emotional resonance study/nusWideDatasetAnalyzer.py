@@ -3,7 +3,8 @@ import pandas as pd
 import re
 import gc
 import time
-from PIL import Image 
+from PIL import Image
+import torch as T
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
@@ -21,12 +22,23 @@ imagesFolder = 'images'
 testing = False
 
 
+
+def myCollate(batch):
+   imgs = [item[0] for item in batch]
+   target = [item[2] for item in batch]
+   target = T.Tensor(target)
+   imgs = T.tensor(imgs)
+   
+   return [imgs,target]
+
+
 class NusWide(Dataset):
     
-    def __init__(self, data,transformation = None, show = False):
+    def __init__(self, data,transformationImg = None, transformationLab = None,show = False):
         super().__init__()
         self.data = data
-        self.transformation = transformation
+        self.transformationImg = transformationImg
+        self.transformationLab = transformationLab
         self.show = show 
         # self.imgPathAbs = pathToDatasetAbs + "/" + imagesFolder
         # self.imgPathRel = pathToDatasetRel + "/" + imagesFolder
@@ -41,22 +53,34 @@ class NusWide(Dataset):
     def __getitem__(self, index):
         image_name = self.data[index][0]
         image_labels = self.data[index][1]
-        image_encoding = self.data[index][2:]
+        image_encoding = list(self.data[index][2:])
         
         try:
-            img = Image.open(pathToDatasetRel + '/' + image_name)
+            img = Image.open(pathToDatasetRel + '/' + image_name).convert('RGB')
         except:
-            img = Image.open(pathToDatasetAbs + '/' + image_name)
+            img = Image.open(pathToDatasetAbs + '/' + image_name).convert('RGB')
+        
+        # img = np.array(img)
+        
+        
+        if not (self.transformationImg == None):
+            img = self.transformationImg(img)
+            # print("transformation")
             
-        if not(self.transformation == None):
-            img = self.transformation(img)
-            
-        img = np.array(img)
+        # if not (self.transformationLab == None):
+        #     image_encoding = self.transformationLab(image_encoding)
+             
+
         if self.show:
             plt.imshow(img)
             plt.show()
+            
+        # img = T.HalfTensor(img)
         
-        return img,image_labels,image_encoding
+        img = img.half()
+        image_encoding = T.Tensor(image_encoding).half()
+        
+        return [img,image_labels,image_encoding]
             
 
 

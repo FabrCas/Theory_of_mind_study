@@ -3,6 +3,9 @@ import pandas as pd
 import re
 import gc
 import time
+from PIL import Image 
+from torch.utils.data import Dataset
+import matplotlib.pyplot as plt
 
 # file system paths and file names
 pathToDatasetRel = './dataset/nus-wide'
@@ -18,7 +21,46 @@ imagesFolder = 'images'
 testing = False
 
 
-class NusDataset():
+class NusWide(Dataset):
+    
+    def __init__(self, data,transformation = None, show = False):
+        super().__init__()
+        self.data = data
+        self.transformation = transformation
+        self.show = show 
+        # self.imgPathAbs = pathToDatasetAbs + "/" + imagesFolder
+        # self.imgPathRel = pathToDatasetRel + "/" + imagesFolder
+        
+    def _preprocessing(self):
+        pass # histogram equalization, gamma correction, ....
+        
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, index):
+        image_name = self.data[index][0]
+        image_labels = self.data[index][1]
+        image_encoding = self.data[index][2:]
+        
+        try:
+            img = Image.open(pathToDatasetRel + '/' + image_name)
+        except:
+            img = Image.open(pathToDatasetAbs + '/' + image_name)
+            
+        if not(self.transformation == None):
+            img = self.transformation(img)
+            
+        img = np.array(img)
+        if self.show:
+            plt.imshow(img)
+            plt.show()
+        
+        return img,image_labels,image_encoding
+            
+
+
+class NusDatasetReader():
 
     def __init__(self):
         self.data = None
@@ -243,7 +285,6 @@ class NusDataset():
         # casting all data to string (also the encoding)
 
         train_data = train_data.to_numpy()
-        print(train_data)
 
         return train_data
     
@@ -269,7 +310,7 @@ class NusDataset():
 if(testing):
     # ______________________test splitting______________________________
     
-    data = NusDataset()
+    data = NusDatasetReader()
     
     data.splitDataset(True)
     # print(data.testSet)

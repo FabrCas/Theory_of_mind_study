@@ -2,13 +2,16 @@ import numpy as np
 import sys 
 import time 
 import os
+import math
 import gc 
 import torch as T
 from torchsummary import summary
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.optim import Adam, lr_scheduler
+from torch.cuda.amp import GradScaler, autocast
 from randaugment import RandAugment
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from nusWideDatasetAnalyzer import NusDatasetReader, NusWide
@@ -21,11 +24,11 @@ device = T.device("cuda:0" if T.cuda.is_available() else "cpu")
 
 # to finish 
 
-class MLCClassifier(T.nn.Module):
+class MLC(T.nn.Module):
     
     
     def __init__(self,args):
-        super(MLCClassifier,self).__init__()
+        super(MLC,self).__init__()
         
         # self.lr = args.lr
         # self.epoch = args.epoch
@@ -59,6 +62,15 @@ class MLCClassifier(T.nn.Module):
         
         
         
+
+    
+
+    def printSummaryNetwork(self):
+        summary(self.model)
+    
+    def getDataSetReader(self):
+        return self.nus_wide_reader
+    
     """"
     Parameters
     ----------
@@ -66,10 +78,15 @@ class MLCClassifier(T.nn.Module):
     y: targets (multi-label binarized vector)
     """
             
-    def computeASL(self,logits, targets):
+    def _computeASL(self,logits, targets):
+        loss = 0
+
     
-        # Calculating Probabilities
+        # From digits to probabilities
         x_sigmoid = T.sigmoid(logits)
+        
+        
+        # Define positive and negative samples 
         xs_pos = x_sigmoid
         xs_neg = 1 - x_sigmoid
         
@@ -95,21 +112,26 @@ class MLCClassifier(T.nn.Module):
                 T.set_grad_enabled(True)
             loss *= one_sided_w
         
+        # print(loss.shape)
+        
         return -loss.sum()
     
-
-    def printSummaryNetwork(self):
-        summary(self.model)
-    
-    def getDataSetReader(self):
-        return self.nus_wide_reader
-    
-    
-        
+    def _saveModel(self, epoch):
+        path_save = os.path.join('models/MLC/')
+        name = 'resNet-'+ str(epoch) +'.ckpt'
+        if not os.path.exists(path_save):
+            os.makedirs(path_save)
+        T.save(self.model.state_dict(), path_save + name)
+            
+    def _loadMOdel(self, epoch):
+        path_load = os.path.join('models/MLC/', 'resNet-{}.ckpt'.format(epoch))
+        ckpt = T.load(path_load)
+        self.model.load_state_dict(ckpt)
         
     def train_MLC(self):
 
-        training_data = self.nus_wide_reader.retrieveTrainingSet()[0:1000]                           # limited !
+        training_data = self.nus_wide_reader.retrieveTrainingSet()             # limited !
+        training_history = []
         
         
         
@@ -130,18 +152,23 @@ class MLCClassifier(T.nn.Module):
         """
         del training_data
         
-        n_steps = len(training_dataset)
+        n_samples = len(training_dataset)
         
-        print("number of steps: {}".format(n_steps))
+        print("number of samples per epoch (no batch): {}".format(n_samples))
 
         
         loaderTrain = DataLoader(training_dataset, batch_size= self.batchSize,
                                  shuffle= True, num_workers= self.workers,
                                  pin_memory= True)
         
+        n_steps = len(loaderTrain)
+        print("number of steps per epoch: {}".format(n_steps))
+        
         optimizer = Adam(self.model.parameters(), lr = self.lr, weight_decay= 0)
         scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=self.lr, steps_per_epoch=n_steps, epochs=self.n_epochs,
                                        pct_start=0.3)
+        
+        scaler = GradScaler()
         
         if False:
             iterdata = next(iter(loaderTrain))
@@ -169,42 +196,100 @@ class MLCClassifier(T.nn.Module):
         
         gc.collect()
         
-        # for n_epoch in range(self.n_epochs) :
-        for index,(images,labels,encoding_labels) in enumerate(loaderTrain):
-            print(index)
+        self.model.train()
         
-            T.cuda.empty_cache()
-            # img = images[0]
-            # print(img)
-            # img = T.movedim(img, 0, 2)
-            # img = (img +1)/2
-            # print(img)
+        for n_epoch in range(self.n_epochs) : #self.n_epochs
+            loss_cumulative = 0
+            for index,(images,labels,encoding_labels) in enumerate(tqdm(loaderTrain)):
+                # print(index)
             
-            # plt.imshow(img)
-            # plt.show()
-            
-            images = images.to(device)
+                T.cuda.empty_cache()
+                # img = images[0]
+                # print(img)
+                # img = T.movedim(img, 0, 2)
+                # img = (img +1)/2
+                # print(img)
+                
+                # plt.imshow(img)
+                # plt.show()
+                
+                optimizer.zero_grad()
+                
+                images = images.to(device)
+                encoding_labels = encoding_labels.to(device)
+                # print(images.shape)
+                # print(images)
+                # print(encoding_labels.shape)
+                # print(encoding_labels)
+    
+    
+                with autocast():
+                    output = self.model.forward(images) 
+                    loss = self._computeASL(output,encoding_labels)
+                
+                
+                # loss = loss.items()
 
+    
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                
+                # loss.backward()
+                # optimizer.step()
+                
+                scheduler.step()
+                
+                loss_cumulative += loss.cpu().detach().item()
+                
+                
+                # store information
+                if index % 100 == 0:
+                    training_history.append([n_epoch, index, loss.item()]) #todo enrichment
+                    
+                if index % 500 == 0:
+                    print('Epoch [{}/{}], Step [{}/{}], LR {:.1e}, Loss: {:.1f}'
+                          .format(n_epoch, self.n_epochs, str(index).zfill(3), str(n_steps-1).zfill(3),
+                                  scheduler.get_last_lr()[0], \
+                                  loss))
+                
 
-            output = self.model.forward(images)
-            
-            # optimizer.zero_grad()
-            # loss = 10
-            # loss.backward()
-            # optimizer.step()
-            # scheduler.step()
-            
-            
-            
- 
+            # avg_lossEpoch = (loss_cumulative/math.ceil((n_steps/self.batchSize)))
+            avg_lossEpoch = (loss_cumulative)/n_steps
+            print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
+            loss_cumulative = 0
+            if n_epoch % 10 == 0:
+                self._saveModel(n_epoch)
+                
+                
         
         
+    
+    def validate_MLC(self):
+        validate_data = self.nus_wide_reader.retrieveTestSet()
         
-    def test_MLC(self):
-        test_data = self.nus_wide_reader.retrieveTestSet()
+        validate_dataset = NusWide(validate_data,
+                                   transformationImg= transforms.Compose([
+                                       transforms.Resize((224,224)),
+                                       RandAugment(),
+                                       transforms.ToTensor(),
+                                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                       ]),
+                                   transformationLab= transforms.Compose([
+                                       transforms.ToTensor()
+                                       ])
+                                   )
+
+        del validate_data
+        
+        loaderVal = DataLoader(validate_dataset, batch_size= self.batchSize,
+                                 shuffle= False, num_workers= self.workers,
+                                 pin_memory= True)
+        
+        self.model.eval()
     
 
-c = MLCClassifier(1)
+c = MLC(1)
 c.train_MLC()
 
     

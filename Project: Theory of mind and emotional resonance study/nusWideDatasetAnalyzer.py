@@ -77,8 +77,8 @@ class NusWide(Dataset):
             
         # img = T.HalfTensor(img)
         
-        img = img.half()
-        image_encoding = T.Tensor(image_encoding).half()
+        img = img
+        image_encoding = T.Tensor(image_encoding)
         
         return [img,image_labels,image_encoding]
             

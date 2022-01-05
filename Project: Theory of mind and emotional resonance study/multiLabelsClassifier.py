@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 
 from nusWideDatasetAnalyzer import NusDatasetReader, NusWide
 from models import ResNet101
+from sklearn.metrics import precision_score, recall_score, f1_score, average_precision_score, accuracy_score
 
 
 
@@ -59,14 +60,12 @@ class MLC(T.nn.Module):
         self.model = ResNet101()
         # self.model.parameters().half()
         self.model.to(device)
-        
+        self.sigmoid = T.nn.Sigmoid()
         
         
 
-    
-
-    def printSummaryNetwork(self):
-        summary(self.model)
+    def printSummaryNetwork(self, inputShape = (32,3,224,224)):
+        summary(self.model, inputShape)
     
     def getDataSetReader(self):
         return self.nus_wide_reader
@@ -83,7 +82,9 @@ class MLC(T.nn.Module):
 
     
         # From digits to probabilities
-        x_sigmoid = T.sigmoid(logits)
+        # x_sigmoid = T.sigmoid(logits)
+        
+        x_sigmoid = self.sigmoid(logits)
         
         
         # Define positive and negative samples 
@@ -122,18 +123,31 @@ class MLC(T.nn.Module):
         if not os.path.exists(path_save):
             os.makedirs(path_save)
         T.save(self.model.state_dict(), path_save + name)
+        
+        
+    def _computeMetrics(self, output,targets):
+        metrics_results = {"accuracy": accuracy_score(targets, output),\
+                           "precision":precision_score(targets, output), \
+                           "recall": recall_score(targets, output),\
+                           "f1-score": f1_score(targets, output), \
+                           "average precision": average_precision_score(targets, output),\
+                           "mean average precision": 1 #todo
+            }
+        
+        return metrics_results
+        
             
-    def _loadMOdel(self, epoch):
-        path_load = os.path.join('models/MLC/', 'resNet-{}.ckpt'.format(epoch))
+    def loadModel(self, epoch, test_number = 1):
+        path_load = os.path.join('models/MLC_' + str(test_number)+ '/', 'resNet-{}.ckpt'.format(epoch))
         ckpt = T.load(path_load)
         self.model.load_state_dict(ckpt)
         
-    def train_MLC(self):
+    def train_MLC(self, save_model = True):
 
         training_data = self.nus_wide_reader.retrieveTrainingSet()             # limited !
         training_history = []
         
-        
+        print("- started training of the model...")
         
         training_dataset = NusWide(training_data,
                                    transformationImg= transforms.Compose([
@@ -258,15 +272,23 @@ class MLC(T.nn.Module):
             avg_lossEpoch = (loss_cumulative)/n_steps
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
             loss_cumulative = 0
-            if n_epoch % 10 == 0:
+            if (n_epoch+1)%10 == 0 and save_model:
                 self._saveModel(n_epoch)
                 
                 
         
         
     
-    def validate_MLC(self):
+    def validate_MLC(self, threshold_truth = 0.5):
         validate_data = self.nus_wide_reader.retrieveTestSet()
+        
+        print("- started validation of the model...")
+        
+        from_pos_to_label = self.nus_wide_reader.getLabels()
+        # print(from_pos_to_label)
+        # print(len(from_pos_to_label))
+        
+
         
         validate_dataset = NusWide(validate_data,
                                    transformationImg= transforms.Compose([
@@ -282,14 +304,107 @@ class MLC(T.nn.Module):
 
         del validate_data
         
+        
         loaderVal = DataLoader(validate_dataset, batch_size= self.batchSize,
                                  shuffle= False, num_workers= self.workers,
                                  pin_memory= True)
         
+
+        
         self.model.eval()
+        
+
+        predictions = []; targets = []
+        
+        for index,(images,labels,encoding_labels) in enumerate(tqdm(loaderVal)):
+            
+            T.cuda.empty_cache()
+
+            
+            if False:
+                img = images[0]
+                img = T.movedim(img, 0, 2)
+                # from [-1,1] to [0,1]
+                img = (img +1)/2
+                
+                plt.imshow(img)
+                plt.show()
+            
+            # images from CPU to GPU
+            images = images.to(device)
+            
+            encoding_labels = encoding_labels.numpy()
+
+                
+            with T.no_grad():
+                with autocast():
+                    output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
+                    temp_labels = []
+                    
+                    # print(output)
+                    # print(np.amax(output_prob))
+                    
+                    if False:
+                        for index,val in enumerate(output_prob[0]):
+                            if val > threshold_truth:
+                                temp_labels.append(from_pos_to_label[index])
+                                
+                        print(temp_labels)
+                    
+                    # pass from probability to binary classification
+                    output_bin = np.array(output_prob > threshold_truth)
+                    
+                    # print(output_bin.shape)
+                    # print(encoding_labels.shape)
+                    
+                    
+                    predictions.append(output_bin)
+                    targets.append(encoding_labels)
+                
+
+            if index == 10:
+                break
+            
+        predictions = np.array(predictions)
+        targets = np.array(targets)
+        
+        print("\n\n\n")
+        print(predictions.shape)
+        print(targets.shape)
+        
+        
+        # flat to 1-D
+        predictions = np.concatenate(predictions)
+        targets = np.concatenate(targets)
+        
+        print(predictions.shape)
+        print(targets.shape)
+        
+        # use metrics todo
+        
+        
+        
+                    
+        
+            
+            
+            
+               
+            
+            
+            
+            
+        
+        
     
 
 c = MLC(1)
-c.train_MLC()
+# c.train_MLC()
+c.loadModel(epoch= 40)
+# c.printSummaryNetwork( (3,224,224) )
+c.validate_MLC()
+
+
+
 
     

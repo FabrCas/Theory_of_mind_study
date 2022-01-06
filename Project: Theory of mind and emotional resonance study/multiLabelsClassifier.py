@@ -2,6 +2,7 @@ import numpy as np
 import sys 
 import time 
 import os
+import re
 import math
 import gc 
 import torch as T
@@ -117,34 +118,65 @@ class MLC(T.nn.Module):
         
         return -loss.sum()
     
-    def _saveModel(self, epoch):
-        path_save = os.path.join('models/MLC/')
+    def _saveModel(self, epoch, folder = 'models/MLC/'):
+        path_save = os.path.join(folder)
         name = 'resNet-'+ str(epoch) +'.ckpt'
         if not os.path.exists(path_save):
             os.makedirs(path_save)
         T.save(self.model.state_dict(), path_save + name)
         
         
-    def _computeMetrics(self, output,targets):
-        metrics_results = {"accuracy": accuracy_score(targets, output),\
-                           "precision":precision_score(targets, output), \
-                           "recall": recall_score(targets, output),\
-                           "f1-score": f1_score(targets, output), \
-                           "average precision": average_precision_score(targets, output),\
-                           "mean average precision": 1 #todo
+    def _compute_mAP(self, output, targets, average = "samples"):
+        mAP = 0
+        n_labels = targets.shape[1]
+        print(n_labels)
+        ap = np.zeros(n_labels)
+        for class_index in range(n_labels):
+            # extract values for label
+            output_label = output[:,class_index] ; target_label = targets[:,class_index]
+            # average precision
+            ap[class_index] = average_precision_score(target_label, output_label, average=average)
+
+        where_nans = np.isnan(ap)
+        for val in where_nans:
+            if val== True:
+                print("found nan value, substitution")
+                ap[where_nans] = 1
+                break
+
+        mAP = np.mean(ap)
+        return mAP
+        
+    def _computeMetrics(self, output,targets, labels, average = "samples"):
+
+        print(output.shape)
+        print(targets.shape)
+        print(labels.shape)
+        # print(targets[0])
+        # print(labels)
+        
+        metrics_results = {
+                            # "accuracy": accuracy_score(targets, output),
+                            "precision":precision_score(targets, output, average = average, zero_division=1),  \
+                            "recall": recall_score(targets, output, average = average, zero_division=1), \
+                            "f1-score": f1_score(targets, output, average= average, zero_division=1), \
+                            "average precision": average_precision_score(targets, output, average= average), \
+                            "mean average precision": self._compute_mAP(output,targets, average)
             }
         
         return metrics_results
-        
             
     def loadModel(self, epoch, test_number = 1):
         path_load = os.path.join('models/MLC_' + str(test_number)+ '/', 'resNet-{}.ckpt'.format(epoch))
         ckpt = T.load(path_load)
         self.model.load_state_dict(ckpt)
         
+        
+    
+        
     def train_MLC(self, save_model = True):
 
-        training_data = self.nus_wide_reader.retrieveTrainingSet()             # limited !
+        training_data = self.nus_wide_reader.retrieveTrainingSet()
         training_history = []
         
         print("- started training of the model...")
@@ -272,10 +304,108 @@ class MLC(T.nn.Module):
             avg_lossEpoch = (loss_cumulative)/n_steps
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
             loss_cumulative = 0
+            
             if (n_epoch+1)%10 == 0 and save_model:
                 self._saveModel(n_epoch)
                 
                 
+    def continue_training(self, srcModel , epochs, save_model = True):
+        if not os.path.exists(srcModel):
+            raise NameError("path doesn't exist!")
+
+        test_n, epoch_loaded = re.findall(r'\d+',srcModel)
+        test_n = int(test_n); epoch_loaded = int(epoch_loaded)
+        final_epoch = epoch_loaded + epochs
+        new_path = "models/MLC_" +str(test_n+1) + "/"
+        if not os.path.exists(new_path):
+            os.mkdir(new_path)
+            
+        # load the model
+        self.loadModel(epoch_loaded, test_n)
+            
+            
+        training_data = self.nus_wide_reader.retrieveTrainingSet()             # limited !
+        training_history = []
+        
+        print("- started the continue of training for the model, from epoch {} to {}".format(epoch_loaded, final_epoch))
+        
+        training_dataset = NusWide(training_data,
+                                   transformationImg= transforms.Compose([
+                                       transforms.Resize((224,224)),
+                                       RandAugment(),
+                                       transforms.ToTensor(),
+                                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                       ]),
+                                   transformationLab= transforms.Compose([
+                                       transforms.ToTensor()
+                                       ])
+                                   )
+        del training_data
+        
+        loaderTrain = DataLoader(training_dataset, batch_size= self.batchSize,
+                                 shuffle= True, num_workers= self.workers,
+                                 pin_memory= True)
+        
+        n_steps = len(loaderTrain)
+        
+        optimizer = Adam(self.model.parameters(), lr = self.lr, weight_decay= 0)
+        scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=self.lr, steps_per_epoch=n_steps, epochs= epochs,
+                                       pct_start=0.3)
+        
+        scaler = GradScaler()
+        
+        gc.collect()
+        
+        self.model.train()
+        
+        for n_epoch in range(epochs) : 
+            loss_cumulative = 0
+            for index,(images,labels,encoding_labels) in enumerate(tqdm(loaderTrain)):
+
+            
+                T.cuda.empty_cache()
+
+                
+                optimizer.zero_grad()
+                
+                images = images.to(device)
+                encoding_labels = encoding_labels.to(device)
+    
+                with autocast():
+                    output = self.model.forward(images) 
+                    loss = self._computeASL(output,encoding_labels)
+                
+                scheduler.step()
+                
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
+                
+
+                
+                loss_cumulative += loss.cpu().detach().item()
+                
+                
+                # store information
+                if index % 100 == 0:
+                    training_history.append([n_epoch, index, loss.item()]) #todo enrichment
+                    
+                if index % 500 == 0:
+                    print('Epoch [{}/{}], Step [{}/{}], LR {:.1e}, Loss: {:.1f}'
+                          .format(n_epoch, epochs, str(index).zfill(3), str(n_steps-1).zfill(3),
+                                  scheduler.get_last_lr()[0], \
+                                  loss))
+                
+
+            # avg_lossEpoch = (loss_cumulative/math.ceil((n_steps/self.batchSize)))
+            avg_lossEpoch = (loss_cumulative)/n_steps
+            print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
+            loss_cumulative = 0
+            
+            if (n_epoch+1)%10 == 0 and save_model:
+                self._saveModel(n_epoch+epoch_loaded, new_path)
+            
         
         
     
@@ -285,15 +415,13 @@ class MLC(T.nn.Module):
         print("- started validation of the model...")
         
         from_pos_to_label = self.nus_wide_reader.getLabels()
-        # print(from_pos_to_label)
-        # print(len(from_pos_to_label))
         
 
         
         validate_dataset = NusWide(validate_data,
                                    transformationImg= transforms.Compose([
                                        transforms.Resize((224,224)),
-                                       RandAugment(),
+                                       # RandAugment(),
                                        transforms.ToTensor(),
                                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                                        ]),
@@ -339,17 +467,22 @@ class MLC(T.nn.Module):
             with T.no_grad():
                 with autocast():
                     output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
+
+
                     temp_labels = []
-                    
-                    # print(output)
-                    # print(np.amax(output_prob))
-                    
+                    temp_targets = []
                     if False:
-                        for index,val in enumerate(output_prob[0]):
+                        for i,val in enumerate(output_prob[0]):
                             if val > threshold_truth:
-                                temp_labels.append(from_pos_to_label[index])
-                                
+                                temp_labels.append(from_pos_to_label[i])
+                        print("")
                         print(temp_labels)
+                        
+                        for i,val in enumerate(encoding_labels[0]):
+                            if val == 1:
+                                temp_targets.append(from_pos_to_label[i])
+                                
+                        print(temp_targets)
                     
                     # pass from probability to binary classification
                     output_bin = np.array(output_prob > threshold_truth)
@@ -362,31 +495,24 @@ class MLC(T.nn.Module):
                     targets.append(encoding_labels)
                 
 
-            if index == 10:
-                break
+            # if index == 10:
+            #     break
             
         predictions = np.array(predictions)
         targets = np.array(targets)
         
         print("\n\n\n")
-        print(predictions.shape)
-        print(targets.shape)
         
         
         # flat to 1-D
         predictions = np.concatenate(predictions)
         targets = np.concatenate(targets)
         
-        print(predictions.shape)
-        print(targets.shape)
-        
-        # use metrics todo
+        evaluations = self._computeMetrics(predictions,targets, from_pos_to_label)
+        print(evaluations)
         
         
-        
-                    
-        
-            
+    # {'precision': 0.5219604682252553, 'recall': 0.7361859292236855, 'f1-score': 0.5728981285236443, 'average precision': 0.45115118659603126}        
             
             
                
@@ -396,13 +522,14 @@ class MLC(T.nn.Module):
             
         
         
-    
-
 c = MLC(1)
-# c.train_MLC()
-c.loadModel(epoch= 40)
-# c.printSummaryNetwork( (3,224,224) )
-c.validate_MLC()
+if False:
+    # c.train_MLC()
+    c.loadModel(epoch= 40)
+    # c.printSummaryNetwork( (3,224,224) )
+    c.validate_MLC()
+    
+c.continue_training("models/MLC_1/resNet-20.ckpt", 20)
 
 
 

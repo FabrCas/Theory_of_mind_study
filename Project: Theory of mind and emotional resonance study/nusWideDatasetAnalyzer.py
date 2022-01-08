@@ -211,7 +211,7 @@ class NusDatasetReader():
         # test = []
         # validation = []`
         
-        for val in self.data.values:     # limit to 15 (test)
+        for val in self.data.values:
 
             # print(val[2])
             

@@ -14,6 +14,7 @@ from torch.cuda.amp import GradScaler, autocast
 from randaugment import RandAugment
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from copy import deepcopy 
 
 from nusWideDatasetAnalyzer import NusDatasetReader, NusWide
 from models import ResNet101
@@ -78,7 +79,7 @@ class MLC(T.nn.Module):
     y: targets (multi-label binarized vector)
     """
             
-    def _computeASL(self,logits, targets):
+    def _computeASL(self,logits, targets, min_clip =1e-6 ):
         loss = 0
 
     
@@ -86,6 +87,13 @@ class MLC(T.nn.Module):
         # x_sigmoid = T.sigmoid(logits)
         
         x_sigmoid = self.sigmoid(logits)
+        # clip 0 values to be greater otherwise loss nan
+        
+        x_sigmoid = T.clamp(x_sigmoid, min= min_clip, max=(1-min_clip))
+        
+        # T.autograd.set_detect_anomaly(True)
+        # with T.no_grad():
+        #     x_sigmoid[x_sigmoid==0] = min_clip
         
         
         # Define positive and negative samples 
@@ -97,8 +105,8 @@ class MLC(T.nn.Module):
             xs_neg = (xs_neg + self.clip).clamp(max=1)
         
         # Cross-Entrpy error
-        los_pos = targets * T.log(xs_pos.clamp(min= self.eps))
-        los_neg = (1 - targets) * T.log(xs_neg.clamp(min= self.eps))
+        los_pos = targets * T.log(xs_pos.clamp(min= self.eps, max = (1-self.eps) ))
+        los_neg = (1 - targets) * T.log(xs_neg.clamp(min= self.eps, max = (1-self.eps) ))
         loss = los_pos + los_neg
         
         # Asymmetric Focusing
@@ -115,7 +123,16 @@ class MLC(T.nn.Module):
             loss *= one_sided_w
         
         # print(loss.shape)
+        # loss_ = deepcopy(loss)
+        # loss_ = loss_.detach().cpu().numpy()
         
+        # print(T.isnan(loss).any())
+        if T.isnan(loss).any():
+            print("loss nan when min values is {}".format(T.min(x_sigmoid)))
+            print("loss nan when max values is {}".format(T.max(x_sigmoid)))
+            print(los_pos)
+            print(los_neg)
+            print(loss)
         return -loss.sum()
     
     def _saveModel(self, epoch, folder = 'models/MLC/'):
@@ -306,7 +323,7 @@ class MLC(T.nn.Module):
             loss_cumulative = 0
             
             if (n_epoch+1)%10 == 0 and save_model:
-                self._saveModel(n_epoch)
+                self._saveModel(n_epoch+1)
                 
                 
     def continue_training(self, srcModel , epochs, save_model = True):
@@ -375,17 +392,18 @@ class MLC(T.nn.Module):
                     output = self.model.forward(images) 
                     loss = self._computeASL(output,encoding_labels)
                 
-                scheduler.step()
+            
                 
                 scaler.scale(loss).backward()
+                T.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0) #0.25
                 scaler.step(optimizer)
                 scaler.update()
 
-                
 
                 
                 loss_cumulative += loss.cpu().detach().item()
-                
+
+                scheduler.step()
                 
                 # store information
                 if index % 100 == 0:
@@ -396,6 +414,8 @@ class MLC(T.nn.Module):
                           .format(n_epoch, epochs, str(index).zfill(3), str(n_steps-1).zfill(3),
                                   scheduler.get_last_lr()[0], \
                                   loss))
+                # if index == 100:
+                #     break
                 
 
             # avg_lossEpoch = (loss_cumulative/math.ceil((n_steps/self.batchSize)))
@@ -403,10 +423,9 @@ class MLC(T.nn.Module):
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
             loss_cumulative = 0
             
-            if (n_epoch+1)%10 == 0 and save_model:
+            if (n_epoch+1)%1 == 0 and save_model:   # to edit
                 self._saveModel(n_epoch+epoch_loaded, new_path)
             
-        
         
     
     def validate_MLC(self, threshold_truth = 0.5):
@@ -466,8 +485,9 @@ class MLC(T.nn.Module):
                 
             with T.no_grad():
                 with autocast():
+                
                     output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
-
+                    print(np.min(output_prob))
 
                     temp_labels = []
                     temp_targets = []
@@ -495,7 +515,7 @@ class MLC(T.nn.Module):
                     targets.append(encoding_labels)
                 
 
-            # if index == 10:
+            # if index == 100:
             #     break
             
         predictions = np.array(predictions)
@@ -525,11 +545,11 @@ class MLC(T.nn.Module):
 c = MLC(1)
 if False:
     # c.train_MLC()
-    c.loadModel(epoch= 40)
+    c.loadModel(epoch= 39, test_number= 2)
     # c.printSummaryNetwork( (3,224,224) )
     c.validate_MLC()
     
-c.continue_training("models/MLC_1/resNet-20.ckpt", 20)
+c.continue_training("models/MLC_2/resNet-30.ckpt", 20)
 
 
 

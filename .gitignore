@@ -9,7 +9,9 @@ models/
 __pycache__/
 results/
 .vector_cache/
+vector_cache/
 
+.*u
 
 ### Images ###
 # JPEG

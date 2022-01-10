@@ -8,6 +8,7 @@ logs/
 models/
 __pycache__/
 results/
+.vector_cache/
 
 
 ### Images ###

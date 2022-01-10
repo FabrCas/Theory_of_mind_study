@@ -344,7 +344,7 @@ class MLC(T.nn.Module):
         training_data = self.nus_wide_reader.retrieveTrainingSet()             # limited !
         training_history = []
         
-        print("- started the continue of training for the model, from epoch {} to {}".format(epoch_loaded, final_epoch))
+        print("- started the continue of training for the model, from epoch {} to {}".format(epoch_loaded+1, final_epoch))
         
         training_dataset = NusWide(training_data,
                                    transformationImg= transforms.Compose([
@@ -407,11 +407,11 @@ class MLC(T.nn.Module):
                 
                 # store information
                 if index % 100 == 0:
-                    training_history.append([n_epoch, index, loss.item()]) #todo enrichment
+                    training_history.append([n_epoch+1, index, loss.item()]) #todo enrichment
                     
                 if index % 500 == 0:
                     print('Epoch [{}/{}], Step [{}/{}], LR {:.1e}, Loss: {:.1f}'
-                          .format(n_epoch, epochs, str(index).zfill(3), str(n_steps-1).zfill(3),
+                          .format(n_epoch+1, epochs, str(index).zfill(3), str(n_steps-1).zfill(3),
                                   scheduler.get_last_lr()[0], \
                                   loss))
                 # if index == 100:
@@ -424,7 +424,7 @@ class MLC(T.nn.Module):
             loss_cumulative = 0
             
             if (n_epoch+1)%1 == 0 and save_model:   # to edit
-                self._saveModel(n_epoch+epoch_loaded, new_path)
+                self._saveModel(n_epoch+1+epoch_loaded, new_path)
             
         
     
@@ -460,6 +460,7 @@ class MLC(T.nn.Module):
         
         self.model.eval()
         
+        test_show_results = True 
 
         predictions = []; targets = []
         
@@ -468,7 +469,7 @@ class MLC(T.nn.Module):
             T.cuda.empty_cache()
 
             
-            if False:
+            if test_show_results:
                 img = images[0]
                 img = T.movedim(img, 0, 2)
                 # from [-1,1] to [0,1]
@@ -487,11 +488,11 @@ class MLC(T.nn.Module):
                 with autocast():
                 
                     output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
-                    print(np.min(output_prob))
+                    # print(np.min(output_prob))
 
                     temp_labels = []
                     temp_targets = []
-                    if False:
+                    if test_show_results:
                         for i,val in enumerate(output_prob[0]):
                             if val > threshold_truth:
                                 temp_labels.append(from_pos_to_label[i])
@@ -515,41 +516,38 @@ class MLC(T.nn.Module):
                     targets.append(encoding_labels)
                 
 
-            # if index == 100:
-            #     break
+            if test_show_results and index == 10:
+                break
+        
+        if not test_show_results:
+            predictions = np.array(predictions)
+            targets = np.array(targets)
             
-        predictions = np.array(predictions)
-        targets = np.array(targets)
-        
-        print("\n\n\n")
-        
-        
-        # flat to 1-D
-        predictions = np.concatenate(predictions)
-        targets = np.concatenate(targets)
-        
-        evaluations = self._computeMetrics(predictions,targets, from_pos_to_label)
-        print(evaluations)
-        
-        
-    # {'precision': 0.5219604682252553, 'recall': 0.7361859292236855, 'f1-score': 0.5728981285236443, 'average precision': 0.45115118659603126}        
+            print("\n\n\n")
             
             
+            # flat to 1-D
+            predictions = np.concatenate(predictions)
+            targets = np.concatenate(targets)
+            
+            evaluations = self._computeMetrics(predictions,targets, from_pos_to_label)
+            print(evaluations)
+        
+        
+    # epoch 30 (test1) {'precision': 0.5219604682252553, 'recall': 0.7361859292236855, 'f1-score': 0.5728981285236443, 'average precision': 0.45115118659603126}        
+            
+    # epoch 50 (test2) {'precision': 0.6146919796160727, 'recall': 0.7494569581640756, 'f1-score': 0.6359045529747034, 'average precision': 0.5254145702800185, 'mean average precision': 0.2542652866757489}    
                
-            
-            
-            
-            
-        
+    
         
 c = MLC(1)
 if False:
     # c.train_MLC()
-    c.loadModel(epoch= 39, test_number= 2)
+    c.loadModel(epoch= 50, test_number= 2)
     # c.printSummaryNetwork( (3,224,224) )
     c.validate_MLC()
-    
-c.continue_training("models/MLC_2/resNet-30.ckpt", 20)
+else:   
+    c.continue_training("models/MLC_2/resNet-50.ckpt", 20)
 
 
 

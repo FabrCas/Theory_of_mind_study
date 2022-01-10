@@ -3,7 +3,7 @@ import os
 import time
 import pandas as pd 
 import matplotlib.pyplot as plt
-import seaborn as sns
+# import seaborn as sns
 from sklearn.model_selection import train_test_split
 
 pathToDataset = './dataset/emotionSensor'
@@ -25,9 +25,9 @@ class emotionSensorReader():
        
        
     def _computeDataFrame(self): 
-        for dirname, _, filenames in os.walk(pathToDataset):
-            for filename in filenames:
-                print(os.path.join(dirname, filename))
+        # for dirname, _, filenames in os.walk(pathToDataset):
+            # for filename in filenames:
+            #     print(os.path.join(dirname, filename))
         
         data = pd.read_csv(pathToDataset + '/' + nameDataset)
         self.data = data
@@ -39,26 +39,20 @@ class emotionSensorReader():
     
     def splitDataset(self, writeFiles = True, test_size = 0.2):
         n_instances = len(self.data)
-        print(n_instances)
         
         startTime = time.time()
-        
-        print(type(self.data))
+
         train, test = train_test_split(self.data, test_size= test_size, shuffle= True)
             
-        print(len(train))
-        print(len(test))
                 
         self.trainSet = np.array(train)
         self.testSet = np.array(test)
-        
-        print(self.trainSet)
-        print(self.testSet)
+
         
         if(writeFiles):
             columns_names = self.getLabels()
             columns_names = np.insert(columns_names, 0,"word")
-            print(columns_names)
+            # print(columns_names)
             
 
             dataframe_train = pd.DataFrame(self.trainSet)
@@ -107,9 +101,9 @@ class emotionSensorReader():
         print(self.data.corr())
         
         # graphic correlation 
-        f,ax = plt.subplots(figsize=(30 ,30))
-        sns.heatmap(self.data.corr(),annot = True, linewidths = 0.6, fmt = ".4f", ax=ax)
-        plt.show()
+        # f,ax = plt.subplots(figsize=(30 ,30))
+        # sns.heatmap(self.data.corr(),annot = True, linewidths = 0.6, fmt = ".4f", ax=ax)
+        # plt.show()
         # show the first ten rows
         
         print(" ***************** 0-10 rows ***************** \n")

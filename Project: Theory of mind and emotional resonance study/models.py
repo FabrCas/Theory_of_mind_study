@@ -3,7 +3,7 @@ import torch.nn as nn
 import time
 from colorama import Back, Fore
 
-
+# ________________________________ ResNet _____________________________________
 """
                             Legend:
                                 
@@ -141,6 +141,11 @@ class ResNet101(nn.Module):
         return x
     
 # a = ResNet101()
+
+# ______________________________ TC model _____________________________________
+
+
+
 
         
         

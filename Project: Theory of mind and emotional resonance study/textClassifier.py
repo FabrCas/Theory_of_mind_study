@@ -8,10 +8,12 @@ import torch as T
 from emotionDatasetAnalyzer import emotionSensorReader
 import torchtext as TT
 from sklearn import svm
+from sklearn import linear_model
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn import preprocessing
 import pickle
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+
 
 
 
@@ -27,10 +29,19 @@ class TC():
         self.embedding = None
         self.tokenizer = None
         self.scaler = None
+        self.model = None
         
+        self.C = 1
+        self.eps = 0.1  # eps-tube size for no penalty (squared l2 penalty)
+        self.gamma = 'scale' #1e-8 #'scale'   # "auto" or "scale"(not used for linear kernel)
+        self.degree = 3  # just for polynomial kernel
+        self.kernel_type = 'rbf'  # ‘linear’, ‘poly’, ‘rbf’, ‘sigmoid’
+        
+        # load embedding
         self._embedding()
         
-        self.model = MultiOutputRegressor(svm.SVR())
+        
+        
         
         
     def _embedding(self):
@@ -54,14 +65,14 @@ class TC():
         trainSet, _ = self.emo_sensor_reader.loadSplittedDataset()
         return trainSet
         
-    def _saveModel(self, folder="models/TC_SVM/", kernel_type = None):
+    def _saveModel(self, folder="models/TC_SVM/"):
         if not os.path.exists(folder):
             os.makedirs(folder)
         
-        if kernel_type == None:
+        if self.kernel_type == None:
             path_save = os.path.join(folder,"msvr.sav")
         else:
-            path_save = os.path.join(folder,"msvr_"+ str(kernel_type)+ ".sav")
+            path_save = os.path.join(folder,"msvr_"+ str(self.kernel_type)+ ".sav")
         # print(path_save)
         pickle.dump(self.model, open(path_save, 'wb'))
     
@@ -77,11 +88,12 @@ class TC():
         self.scaler = pickle.load(open(path_save,'rb'))
         
     
-    def loadModel(self, folder="models/TC_SVM/", kernel_type=None):
-        if kernel_type == None:
+    def loadModel(self, folder="models/TC_SVM/"):
+        
+        if self.kernel_type == None:
             path_load = os.path.join(folder,"msvr.sav")
         else:
-            path_load = os.path.join(folder,"msvr_"+ str(kernel_type)+ ".sav")
+            path_load = os.path.join(folder,"msvr_"+ str(self.kernel_type)+ ".sav")
         
         self.model = pickle.load(open(path_load,'rb'))
         self.loadScaler()
@@ -146,31 +158,86 @@ class TC():
     
     
     
-    def train_TC(self, save_model = True, kernel_type = None):
+    def train_TC(self, save_model = False, kernel_type = None):
+        
+        # print(self.kernel_type)
+        self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=3 , \
+                                                  gamma = self.gamma, C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1))
+        # self.model = MultiOutputRegressor(svm.SVR(max_iter= -1) )   
+        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=1e9, tol=1e-3))
+        # self.model = MultiOutputRegressor(svm.LinearSVR()) 
+        
+        
+        # self.model = svm.SVR(kernel=self.kernel_type, degree= self.degree, \
+        #                                           gamma = self.gamma, C = self.C, epsilon= self.eps)
         
         trainset = self._getTrainSet()
+        
+        # print(trainset)
+        print(trainset.shape)
         # separate x and y from trainSet
         x,y = trainset[:,0],trainset[:,1:]
+        
+        # print(x)
+        print(x.shape)
+        
         # remove spaces from input
         x = [x_i.strip() for x_i in x] 
         
         # get embedding
         x_emb = [np.array(self.embedding[x_i])for x_i in x]
         
+
+        
         # to numpy array
         x_emb = np.array(x_emb)
         y = np.array(y)
+        
+        # print(x_emb)
+        print(x_emb.shape)
+        
+        # print(y)
+        print(y.shape)
         
         # define scaler and scale input 
         scaler = preprocessing.StandardScaler().fit(x_emb)
         self.scaler = scaler
         x_emb_scaled = scaler.transform(x_emb)
+        
+        # print(x_emb_scaled)
+        print(x_emb_scaled.shape)
 
         
         # print(x_emb_scaled.shape)
         # print(y.shape)
         
+        # x_emb_scaled = x_emb_scaled[:,:1]
+        # y = y[:,:]
+        
+        
+        print(x_emb_scaled.shape)
         self.model.fit(x_emb_scaled,y)
+        t1 = "happy"
+        t2 = "die"
+        
+        print(T.cosine_similarity(self.embedding[t1].unsqueeze(0),self.embedding[t2].unsqueeze(0)))
+        
+        print("------------------------------------------------------")
+        t1 = t1.strip()
+        t1 = np.array(self.embedding[t1])
+        # t1 = np.squeeze(t1)
+        t1 = np.expand_dims(t1,0)
+        
+        t2 = t2.strip()
+        t2 = np.array(self.embedding[t2])
+        # t2 = np.squeeze(t2)
+        t2 = np.expand_dims(t2,0)
+        
+        y1 = self.model.predict(t1)
+        y2 = self.model.predict(t2)
+        print(y1)
+        print(y2)
+        print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
         
         if save_model: 
             self._saveModel()
@@ -197,10 +264,31 @@ class TC():
         self._computeMetrics(y_pred,y)
         gc.collect()
         
+    def predict(self, x):
+        x = x.strip()
+        # x = np.expand_dims(x,0)
+        x = np.array(self.embedding[x])
+        # print(x)
+        print(x.shape)
+        x = np.expand_dims(x,0)
+        # x = self.scaler.transform(x)
+
+        print(x.shape)
+        y = self.model.predict(x)
+        print(y.shape)
+        return y
+        
         
         
         
 new = TC(0)
-# new.train_TC()
-new.loadModel()
-new.test_TC()
+new.train_TC()
+# new.loadModel()
+# new.test_TC()
+
+t1 = "happy"
+t2 = "die"
+# print(new.predict(t1))
+# print(new.predict(t2))
+
+# print(T.cosine_similarity(new.embedding[t1].unsqueeze(0),new.embedding[t2].unsqueeze(0)))

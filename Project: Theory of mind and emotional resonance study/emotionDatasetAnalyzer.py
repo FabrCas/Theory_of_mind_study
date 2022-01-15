@@ -118,6 +118,3 @@ class emotionSensorReader():
         print(" ***************** 0-10 rows ***************** \n")
         print(self.data[:10])  #data.head(10)
 
-
-reader = emotionSensorReader()
-reader.loadSplittedDataset()

@@ -36,7 +36,7 @@ class TC():
         self.eps = 0.1  # eps-tube size for no penalty (squared l2 penalty)
         self.gamma = 'scale' #1e-8 #'scale'   # "auto" or "scale"(not used for linear kernel)
         self.degree = 3  # just for polynomial kernel
-        self.kernel_type = 'sigmoid'  # ‘linear’, ‘poly’, ‘rbf’, ‘sigmoid’
+        self.kernel_type = 'poly'  # ‘linear’, ‘poly’, ‘rbf’, ‘sigmoid’
         
         # load embedding
         self._loadEmbedding()
@@ -263,12 +263,17 @@ class TC():
     def train_TC(self, save_model = True):
         print("- Training regresssion model...")
         
-        # print(self.kernel_type)
-        self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=3 , \
-                                                  gamma = self.gamma, C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1))
+        #works fine glove
+        self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf", degree=3 , \
+                                                  gamma = "scale", C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-20))
+        
+        
+        # self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=50 , \
+        #                                           gamma = "scale", C =10, epsilon= 1e-10, cache_size= 2000, max_iter= 1e6, tol = 1e-8))
+        
         # self.model = MultiOutputRegressor(svm.SVR(max_iter= -1) )   
-        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=1e9, tol=1e-3))
-        # self.model = MultiOutputRegressor(svm.LinearSVR()) 
+        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=100000, tol=1e-3))
+        # self.model = MultiOutputRegressor(svm.LinearSVR(max_iter=10000)) 
         
         
         # self.model = svm.SVR(kernel=self.kernel_type, degree= self.degree, \
@@ -339,74 +344,11 @@ new.train_TC()
 
 # new.loadModel()
 # new.test_TC()
-t1 = "cat"
-t2 = "smile"
+
+t1 = "sun"
+t2 = "injured"
 
 y1,x1 = new.predict(t1)
 y2,x2 = new.predict(t2)
 print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
 print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
-
-
-if False:
-    model = BertModel.from_pretrained('bert-base-uncased')
-    model.eval()
-    model.to(device)
-    
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    
-    text = "[CLS] Who was Jim Henson ? [SEP] Jim Henson was a puppeteer [SEP]"
-    
-    # sentence_1 = "The man was accused of robbing a bank"
-    sentence_1 = "shit [PAD]"
-    sentence_2 = "shit [PAD]"
-    # sentence_2 = "[CLS] The man was accused of robbing a bank [SEP]"
-    
-    # sentence_2 = "[CLS] The man went fishing by the bank of the river [SEP]"
-    
-    
-    tokenized_text = tokenizer.tokenize(sentence_1)
-    indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
-    print(indexed_tokens)
-    tokens_tensor = T.tensor([indexed_tokens]).to(device)
-    
-    tokenized_text_2 = tokenizer.tokenize(sentence_2)
-    indexed_token_2 = tokenizer.convert_tokens_to_ids(tokenized_text_2)
-    print(indexed_token_2)
-    tokens_tensor_2 = T.tensor([indexed_token_2]).to(device)
-    print(tokenized_text)
-    print(tokenized_text_2)
-    # segments_ids = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]
-    # segments_tensors = T.tensor([segments_ids])
-    # segments_tensors = segments_tensors.to(device)
-    
-
-    with T.no_grad():
-        encoded_layers_1 , _ = model(tokens_tensor) # results of with the folling shape (n_layer,n_sentence,n_token,encoding)
-        encoded_layers_2 , _ = model(tokens_tensor_2)
-    
-    # print(len(encoded_layers))
-    # print(type(encoded_layers))
-    
-    selected_h =encoded_layers_1[11] 
-    selected_h2 =encoded_layers_2[11] 
-    # print(type(selected_h))
-    # print(selected_h.shape)
-    
-    selected_h = T.reshape(selected_h, (len(tokenized_text),768)) # squeezeing
-    selected_h2 = T.reshape(selected_h2, (len(tokenized_text_2),768)) # squeezeing
-    print(selected_h.shape)
-    print(selected_h2.shape)
-    
-    # bank_embedding_1 = selected_h[9,:]
-    # bank_embedding_2 =selected_h2[7,:]
-    
-    bank_embedding_1 = selected_h[0,:]
-    bank_embedding_2 = selected_h2[0,:]
-    
-    print(bank_embedding_1.shape)
-    print(bank_embedding_2.shape)
-    print(tokenized_text[0])
-    print(tokenized_text_2[0])
-    
-    print(T.cosine_similarity(bank_embedding_1.unsqueeze(0),bank_embedding_2.unsqueeze(0)))

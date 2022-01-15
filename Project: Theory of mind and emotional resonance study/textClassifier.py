@@ -13,7 +13,7 @@ from sklearn.multioutput import MultiOutputRegressor
 from sklearn import preprocessing
 import pickle
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-
+from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM
 
 
 
@@ -25,7 +25,8 @@ class TC():
         self.emo_sensor_reader = emotionSensorReader()
         # self.trainSet, self.testSet = self.emo_sensor_reader.loadSplittedDataset()
         
-        self.name_embedding = "glove"   # to be selected from args
+        self.name_embedding = "bert"   # to be selected from args
+        self.device = T.device("cuda:0" if T.cuda.is_available() else "cpu")
         self.embedding = None
         self.tokenizer = None
         self.scaler = None
@@ -35,27 +36,128 @@ class TC():
         self.eps = 0.1  # eps-tube size for no penalty (squared l2 penalty)
         self.gamma = 'scale' #1e-8 #'scale'   # "auto" or "scale"(not used for linear kernel)
         self.degree = 3  # just for polynomial kernel
-        self.kernel_type = 'rbf'  # ‘linear’, ‘poly’, ‘rbf’, ‘sigmoid’
+        self.kernel_type = 'sigmoid'  # ‘linear’, ‘poly’, ‘rbf’, ‘sigmoid’
         
         # load embedding
-        self._embedding()
+        self._loadEmbedding()
         
         
+    def _wordToEmbedding(self, x, is_training = False, is_testing = False):
+        
+        if self.name_embedding == "glove":
+            if is_training or is_testing:
+                
+                # remove spaces from input
+                x = [x_i.strip() for x_i in x] 
+                
+                # get embedding
+                x_emb = [np.array(self.embedding[x_i])for x_i in x]
+                
+    
+                # to numpy array embeddings
+                x_emb = np.array(x_emb)
+                
+    
+                if is_training:
+                    # define scaler and scale input 
+                    scaler = preprocessing.StandardScaler().fit(x_emb)
+                    self.scaler = scaler
+                
+                x_emb_scaled = self.scaler.transform(x_emb)
+                
+                print(x_emb_scaled.shape)   
+                
+            else: # simple forward
+                x = x.strip()
+    
+                x_emb = np.array(self.embedding[x])
+    
+                x_emb = np.expand_dims(x_emb,0)
+                x_emb_scaled = self.scaler.transform(x_emb)
+        
+        elif self.name_embedding == "bert":
+            # since here we work with words no sentence or sentences we can omit start & end tag: [CLS] [SEP]
+            self.embedding.to(self.device)
+            
+            if is_training or is_testing:
+                
+                # remove spaces from input
+                x = [x_i.strip() for x_i in x] 
+                
+                # print(x)
+                # tokenize word
+                x_token = [self.tokenizer.tokenize(x_i) for x_i in x]
+                
+                
+                # padding for different lenghts
+                max_length_token = max([len(x_i) for x_i in x_token])
+                for x_i in x_token:
+                    while(len(x_i) < max_length_token):
+                        x_i.append('[PAD]')
+                # print(x_token)
+                
+                # token to id
+                x_token_idx = [self.tokenizer.convert_tokens_to_ids(x_i) for x_i in x_token]
+                # print(x_token_idx)
+                
+                # token ids to Tensor
+                x_token_idx = T.tensor(x_token_idx).to(self.device)
+                # print(x_token_idx.shape)
+                
+                with T.no_grad():
+                    embedding_layers, _ = self.embedding(x_token_idx)
+                
+                # take embedding from the final layer (|h|=12)
+                x_emb = embedding_layers[11].to('cpu').numpy()
+                
+                # print(x_emb.shape)
+                # take first element of the embedding
+                x_emb = x_emb[:,0,:]
+                # print(x_emb[3])
+                # print(x_emb.shape)
+                
+            
+                if is_training:
+                    # define scaler and scale input 
+                    scaler = preprocessing.StandardScaler().fit(x_emb)
+                    self.scaler = scaler
+                
+                x_emb_scaled = self.scaler.transform(x_emb)
+                
+                # print(x_emb_scaled[3])
+                # print(x_emb_scaled.shape)   
+                
+            else: # simple forward on word
+                x = x.strip()
+                
+                x_token = self.tokenizer.tokenize(x)
+                x_token_idx = self.tokenizer.convert_tokens_to_ids(x_token)
+                x_token_idx = T.tensor([x_token_idx]).to(self.device)
+ 
+                
+                with T.no_grad():
+                    embedding_layers, _ = self.embedding(x_token_idx)
+                
+                x_emb = embedding_layers[11].to('cpu').numpy()
+                x_emb = x_emb[:,0,:]
+                x_emb_scaled = self.scaler.transform(x_emb)
+                
+            self.embedding.to('cpu')   
+        return x_emb_scaled
+            
         
         
-        
-    def _embedding(self):
+    def _loadEmbedding(self):
             # glove = TT.vocab.GloVe(name="6B", dim=100)
             
             if self.name_embedding == "glove":
                 self.embedding = TT.vocab.GloVe(name="840B", dim=300)
-            else:
-                pass
+                
+            elif self.name_embedding == "bert":
+                self.embedding = BertModel.from_pretrained('bert-base-uncased')
+                self.embedding.eval()
+                self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             
-            # t1 =  glove['cat'].unsqueeze(0)
-            # t2 =   glove['dog'].unsqueeze(0)
-            
-            # print(T.cosine_similarity(t1,t2))
             
     def _getTestSet(self):
         _ , testSet = self.emo_sensor_reader.loadSplittedDataset()
@@ -72,7 +174,7 @@ class TC():
         if self.kernel_type == None:
             path_save = os.path.join(folder,"msvr.sav")
         else:
-            path_save = os.path.join(folder,"msvr_"+ str(self.kernel_type)+ ".sav")
+            path_save = os.path.join(folder,"msvr_"+ str(self.name_embedding)+ ".sav")
         # print(path_save)
         pickle.dump(self.model, open(path_save, 'wb'))
     
@@ -80,11 +182,11 @@ class TC():
         if not os.path.exists(folder):
             os.makedirs(folder)
             
-        path_save = os.path.join(folder,"scaler_xTrain.sav")
+        path_save = os.path.join(folder,"scaler_xTrain_"+str(self.name_embedding) +".sav")
         pickle.dump(self.scaler, open(path_save, 'wb'))
     
     def loadScaler(self, folder="models/TC_SVM/scaler"):
-        path_save = os.path.join(folder,"scaler_xTrain.sav")
+        path_save = os.path.join(folder,"scaler_xTrain_"+str(self.name_embedding) +".sav")
         self.scaler = pickle.load(open(path_save,'rb'))
         
     
@@ -93,7 +195,7 @@ class TC():
         if self.kernel_type == None:
             path_load = os.path.join(folder,"msvr.sav")
         else:
-            path_load = os.path.join(folder,"msvr_"+ str(self.kernel_type)+ ".sav")
+            path_load = os.path.join(folder,"msvr_"+ str(self.name_embedding)+ ".sav")
         
         self.model = pickle.load(open(path_load,'rb'))
         self.loadScaler()
@@ -158,7 +260,8 @@ class TC():
     
     
     
-    def train_TC(self, save_model = False, kernel_type = None):
+    def train_TC(self, save_model = True):
+        print("- Training regresssion model...")
         
         # print(self.kernel_type)
         self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=3 , \
@@ -173,71 +276,15 @@ class TC():
         
         trainset = self._getTrainSet()
         
-        # print(trainset)
-        print(trainset.shape)
         # separate x and y from trainSet
         x,y = trainset[:,0],trainset[:,1:]
         
-        # print(x)
-        print(x.shape)
-        
-        # remove spaces from input
-        x = [x_i.strip() for x_i in x] 
-        
-        # get embedding
-        x_emb = [np.array(self.embedding[x_i])for x_i in x]
-        
-
-        
-        # to numpy array
-        x_emb = np.array(x_emb)
+        # targets to numpy array 
         y = np.array(y)
         
-        # print(x_emb)
-        print(x_emb.shape)
+        x_emb_scaled = self._wordToEmbedding(x, is_training= True)
         
-        # print(y)
-        print(y.shape)
-        
-        # define scaler and scale input 
-        scaler = preprocessing.StandardScaler().fit(x_emb)
-        self.scaler = scaler
-        x_emb_scaled = scaler.transform(x_emb)
-        
-        # print(x_emb_scaled)
-        print(x_emb_scaled.shape)
-
-        
-        # print(x_emb_scaled.shape)
-        # print(y.shape)
-        
-        # x_emb_scaled = x_emb_scaled[:,:1]
-        # y = y[:,:]
-        
-        
-        print(x_emb_scaled.shape)
         self.model.fit(x_emb_scaled,y)
-        t1 = "happy"
-        t2 = "die"
-        
-        print(T.cosine_similarity(self.embedding[t1].unsqueeze(0),self.embedding[t2].unsqueeze(0)))
-        
-        print("------------------------------------------------------")
-        t1 = t1.strip()
-        t1 = np.array(self.embedding[t1])
-        # t1 = np.squeeze(t1)
-        t1 = np.expand_dims(t1,0)
-        
-        t2 = t2.strip()
-        t2 = np.array(self.embedding[t2])
-        # t2 = np.squeeze(t2)
-        t2 = np.expand_dims(t2,0)
-        
-        y1 = self.model.predict(t1)
-        y2 = self.model.predict(t2)
-        print(y1)
-        print(y2)
-        print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
         
         if save_model: 
             self._saveModel()
@@ -247,15 +294,20 @@ class TC():
         
     
     def test_TC(self):
+        print("- Testing regresssion model...")
+        
+        if self.model == None:
+            self.loadModel()
+            
         testset = self._getTestSet()
         # separate x and y from testSet
         x,y = testset[:,0],testset[:,1:]
         
-        # process x
-        x = [x_i.strip() for x_i in x] 
-        x_emb = [np.array(self.embedding[x_i])for x_i in x]
+        # targets to numpy array 
         y = np.array(y)
-        x_emb_scaled = self.scaler.transform(x_emb)
+        
+        # process x
+        x_emb_scaled = self._wordToEmbedding(x,is_testing=True)
         
         # make predictions
         y_pred = self.model.predict(x_emb_scaled)
@@ -265,30 +317,96 @@ class TC():
         gc.collect()
         
     def predict(self, x):
-        x = x.strip()
-        # x = np.expand_dims(x,0)
-        x = np.array(self.embedding[x])
-        # print(x)
-        print(x.shape)
-        x = np.expand_dims(x,0)
-        # x = self.scaler.transform(x)
-
-        print(x.shape)
-        y = self.model.predict(x)
+        
+        if self.model == None:
+            self.loadModel()
+        
+        # process x
+        x_emb = self._wordToEmbedding(x)
+        
+        # make predictions
+        y = self.model.predict(x_emb)
         print(y.shape)
-        return y
+        
+        print(y)
+        return y, x_emb
         
         
         
         
 new = TC(0)
 new.train_TC()
+
 # new.loadModel()
 # new.test_TC()
+t1 = "cat"
+t2 = "smile"
 
-t1 = "happy"
-t2 = "die"
-# print(new.predict(t1))
-# print(new.predict(t2))
+y1,x1 = new.predict(t1)
+y2,x2 = new.predict(t2)
+print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
+print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
 
-# print(T.cosine_similarity(new.embedding[t1].unsqueeze(0),new.embedding[t2].unsqueeze(0)))
+
+if False:
+    model = BertModel.from_pretrained('bert-base-uncased')
+    model.eval()
+    model.to(device)
+    
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    
+    text = "[CLS] Who was Jim Henson ? [SEP] Jim Henson was a puppeteer [SEP]"
+    
+    # sentence_1 = "The man was accused of robbing a bank"
+    sentence_1 = "shit [PAD]"
+    sentence_2 = "shit [PAD]"
+    # sentence_2 = "[CLS] The man was accused of robbing a bank [SEP]"
+    
+    # sentence_2 = "[CLS] The man went fishing by the bank of the river [SEP]"
+    
+    
+    tokenized_text = tokenizer.tokenize(sentence_1)
+    indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
+    print(indexed_tokens)
+    tokens_tensor = T.tensor([indexed_tokens]).to(device)
+    
+    tokenized_text_2 = tokenizer.tokenize(sentence_2)
+    indexed_token_2 = tokenizer.convert_tokens_to_ids(tokenized_text_2)
+    print(indexed_token_2)
+    tokens_tensor_2 = T.tensor([indexed_token_2]).to(device)
+    print(tokenized_text)
+    print(tokenized_text_2)
+    # segments_ids = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]
+    # segments_tensors = T.tensor([segments_ids])
+    # segments_tensors = segments_tensors.to(device)
+    
+
+    with T.no_grad():
+        encoded_layers_1 , _ = model(tokens_tensor) # results of with the folling shape (n_layer,n_sentence,n_token,encoding)
+        encoded_layers_2 , _ = model(tokens_tensor_2)
+    
+    # print(len(encoded_layers))
+    # print(type(encoded_layers))
+    
+    selected_h =encoded_layers_1[11] 
+    selected_h2 =encoded_layers_2[11] 
+    # print(type(selected_h))
+    # print(selected_h.shape)
+    
+    selected_h = T.reshape(selected_h, (len(tokenized_text),768)) # squeezeing
+    selected_h2 = T.reshape(selected_h2, (len(tokenized_text_2),768)) # squeezeing
+    print(selected_h.shape)
+    print(selected_h2.shape)
+    
+    # bank_embedding_1 = selected_h[9,:]
+    # bank_embedding_2 =selected_h2[7,:]
+    
+    bank_embedding_1 = selected_h[0,:]
+    bank_embedding_2 = selected_h2[0,:]
+    
+    print(bank_embedding_1.shape)
+    print(bank_embedding_2.shape)
+    print(tokenized_text[0])
+    print(tokenized_text_2[0])
+    
+    print(T.cosine_similarity(bank_embedding_1.unsqueeze(0),bank_embedding_2.unsqueeze(0)))

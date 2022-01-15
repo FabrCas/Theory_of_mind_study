@@ -14,7 +14,16 @@ nameDataset = 'Andbrain_DataSet.csv'
 nameDataset_train = 'Andbrain_DataSet_train.csv'
 nameDataset_test = 'Andbrain_DataSet_test.csv'
 
-
+"""
+target:
+1) disgust
+2) surprise
+3) neutral
+4) anger
+5) sad
+6) happy
+7) fear
+"""
 class emotionSensorReader():
     def __init__(self):
        self.data = None

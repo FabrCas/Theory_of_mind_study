@@ -1,16 +1,15 @@
 import speech_recognition as sr
 import pyttsx3
 import os 
-from colorama import init, Fore, Back, Style
 
 class Listener():
     def __init__(self):
         self.is_listening = True
         self.recognizer = sr.Recognizer()
         self.engine_speaker = pyttsx3.init()
-        self.engine_speaker.setProperty('rate', self.engine_speaker.getProperty('rate')-25)
+        self.engine_speaker.setProperty('rate', self.engine_speaker.getProperty('rate')-50)
         self.engine_speaker.setProperty('voice', "english")
-        
+
     def speak(self, text = "Hello world!"):
         self.engine_speaker.say(text)
         self.engine_speaker.runAndWait()
@@ -32,7 +31,7 @@ class Listener():
             message = self.listen()
         return message
 
-    def listen(self, speak_it = True):
+    def listen(self, speak_it = True, reproduce_audio = False):
         self.is_listening = True
         
         # audio input taken directly from the microphone (online manner)
@@ -52,26 +51,26 @@ class Listener():
                 # set as recognizer the google one
                 text = self.recognizer.recognize_google(audio)
                 text = text.lower()
-                print(Fore.LIGHTGREEN_EX +"audio input: {}".format(text))
+                print("audio input: {}".format(text))
             except:
-                print(Fore.LIGHTRED_EX + "audio input not recognized, try again please")
+                print("audio input not recognized, try again please")
                 self.is_listening = False
         
-        if text != "": self.speak(text)
+        if text != "" and reproduce_audio: self.speak(text)
         return text
     
     
-    def recognize_audio(self, name, path=""):
+    def recognize_audio(self, name, path="", reproduce_audio = False):
         path_to_file = os.path.join(path,name)
         audio_file = sr.AudioFile(path_to_file)
         with audio_file as audioSource:
             audio = self.recognizer.record(audioSource)
             
         text = self.recognizer.recognize_google(audio)
-        self.speak(text)
+        # print(text)
+        if reproduce_audio: self.speak(text)
         return text 
     
-
 
 new = Listener()
 # new.speak()

@@ -541,7 +541,7 @@ class MLC(T.nn.Module):
     
         
 c = MLC(1)
-if False:
+if True :
     # c.train_MLC()
     c.loadModel(epoch= 50, test_number= 2)
     # c.printSummaryNetwork( (3,224,224) )

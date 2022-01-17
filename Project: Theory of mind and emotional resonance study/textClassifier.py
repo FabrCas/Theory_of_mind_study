@@ -1,21 +1,30 @@
+# General imports 
 import numpy as np 
 import sys 
 import time 
 import os
+import re
 import math
 import gc
-import torch as T
+import pickle
+
+# local imports
 from emotionDatasetAnalyzer import emotionSensorReader
+
+# Machine learning libs 
 import torchtext as TT
+import torch as T
 from sklearn import svm
 from sklearn import linear_model
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn import preprocessing
-import pickle
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM
-
-
+from punctuator import Punctuator
+import nltk
+from nltk import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
 
 
 device = T.device("cuda:0" if T.cuda.is_available() else "cpu")
@@ -41,6 +50,43 @@ class TC():
         # load embedding
         self._loadEmbedding()
         
+        self.usePunctuator = True # from args
+        self.useStemming = True
+        
+        
+        if self.usePunctuator:
+            self.punctuator = Punctuator('./models/punctuator/Demo-Europarl-EN.pcl')
+        
+        if self.useStemming:
+            self.stemmer = PorterStemmer()
+        try:   
+            self.stop_words = set(stopwords.words('english'))
+        except:
+            nltk.download('stopwords')
+            self.stop_words = set(stopwords.words('english'))
+    
+    # this operation increase accuracy but make computation slower
+    def _separeteSentences(self, text):
+        text = self.punctuator.punctuate(text)
+        sents_list = sent_tokenize(text)
+        return sents_list
+    
+    def _preProcessSentence(self, sentence):
+        sentence = sentence.lower()
+
+        #remove punctuations and other non alphabetic characters
+        sentence = re.sub(r'[^\w\s]','',sentence) 
+
+        words_list = word_tokenize(sentence)
+
+        # remove english stopwords
+        words_list = [word for word in words_list if not word in self.stop_words]
+
+        if self.useStemming:
+            words_list = [self.stemmer.stem(word) for word in words_list]
+
+        return words_list
+            
         
     def _wordToEmbedding(self, x, is_training = False, is_testing = False):
         
@@ -77,7 +123,7 @@ class TC():
         
         elif self.name_embedding == "bert":
             # since here we work with words no sentence or sentences we can omit start & end tag: [CLS] [SEP]
-            self.embedding.to(self.device)
+     
             
             if is_training or is_testing:
                 
@@ -127,7 +173,7 @@ class TC():
                 # print(x_emb_scaled[3])
                 # print(x_emb_scaled.shape)   
                 
-            else: # simple forward on word
+            elif not(isinstance(x, list)) : # simple forward on word
                 x = x.strip()
                 
                 x_token = self.tokenizer.tokenize(x)
@@ -142,7 +188,9 @@ class TC():
                 x_emb = x_emb[:,0,:]
                 x_emb_scaled = self.scaler.transform(x_emb)
                 
-            self.embedding.to('cpu')   
+            else: # forward
+                pass
+            
         return x_emb_scaled
             
         
@@ -157,6 +205,7 @@ class TC():
                 self.embedding = BertModel.from_pretrained('bert-base-uncased')
                 self.embedding.eval()
                 self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+                self.embedding.to(self.device)
             
             
     def _getTestSet(self):
@@ -265,7 +314,7 @@ class TC():
         
         #works fine glove
         self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf", degree=3 , \
-                                                  gamma = "scale", C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-20))
+                                                  gamma = "scale", C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-3))
         
         
         # self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=50 , \
@@ -321,7 +370,7 @@ class TC():
         self._computeMetrics(y_pred,y)
         gc.collect()
         
-    def predict(self, x):
+    def predict_Word2Sentiment(self, x):
         
         if self.model == None:
             self.loadModel()
@@ -335,20 +384,35 @@ class TC():
         
         print(y)
         return y, x_emb
+    
+    def predict_wordsList2Sentiment(self, words):
+        print(words)
         
+    def predict_Corpus2Sentiment(self,c):
+        if not(self.usePunctuator):
+            return self.predict_wordsList2Sentiment(c)
         
+        sents = self._separeteSentences(text)
+        sents = [self._preProcessSentence(sent) for sent in sents]
+        y_sents = [self.predict_wordsList2Sentiment(words) for words in sents]
+    
+
         
         
 new = TC(0)
-new.train_TC()
+text = "today i was having fun playing with my cousin when a stranger came up into the house he was tall and thin he asked about his parents but they weren't at home he said to let them know about the visit "
+new.predict_Corpus2Sentiment(text)
 
-# new.loadModel()
-# new.test_TC()
-
-t1 = "sun"
-t2 = "injured"
-
-y1,x1 = new.predict(t1)
-y2,x2 = new.predict(t2)
-print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
-print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
+if False:
+    new.train_TC()
+    
+    # new.loadModel()
+    # new.test_TC()
+    
+    t1 = "sun"
+    t2 = "injured"
+    
+    y1,x1 = new.predict_Word2Sentiment(t1)
+    y2,x2 = new.predict_Word2Sentiment(t2)
+    print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
+    print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))

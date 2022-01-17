@@ -70,8 +70,9 @@ class Listener():
         # print(text)
         if reproduce_audio: self.speak(text)
         return text 
-    
 
-new = Listener()
-# new.speak()
-new.recognize_audio("test.wav")
+# ---------------------------> [test section]
+    
+if False
+    new = Listener()
+    new.recognize_audio("test.wav")

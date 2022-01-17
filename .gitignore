@@ -11,7 +11,9 @@ results/
 .vector_cache/
 vector_cache/
 
-.*u
+.*
+
+*.wav
 
 ### Images ###
 # JPEG

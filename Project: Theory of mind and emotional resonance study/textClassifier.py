@@ -84,11 +84,13 @@ class TC():
 
         if self.useStemming:
             words_list = [self.stemmer.stem(word) for word in words_list]
-
+        
+        # todo: eliminate words not related to the sentences, i.e. error in the speech recognition phase
+        
         return words_list
             
         
-    def _wordToEmbedding(self, x, is_training = False, is_testing = False):
+    def _wordToEmbedding(self, x, is_training = False, is_testing = False, from_speech = False):
         
         if self.name_embedding == "glove":
             if is_training or is_testing:
@@ -122,15 +124,14 @@ class TC():
                 x_emb_scaled = self.scaler.transform(x_emb)
         
         elif self.name_embedding == "bert":
-            # since here we work with words no sentence or sentences we can omit start & end tag: [CLS] [SEP]
-     
             
             if is_training or is_testing:
                 
                 # remove spaces from input
                 x = [x_i.strip() for x_i in x] 
                 
-                # print(x)
+                # since here we work with words no sentence or sentences we can omit start & end tag: [CLS] [SEP]
+                
                 # tokenize word
                 x_token = [self.tokenizer.tokenize(x_i) for x_i in x]
                 
@@ -140,15 +141,12 @@ class TC():
                 for x_i in x_token:
                     while(len(x_i) < max_length_token):
                         x_i.append('[PAD]')
-                # print(x_token)
                 
                 # token to id
                 x_token_idx = [self.tokenizer.convert_tokens_to_ids(x_i) for x_i in x_token]
-                # print(x_token_idx)
                 
                 # token ids to Tensor
                 x_token_idx = T.tensor(x_token_idx).to(self.device)
-                # print(x_token_idx.shape)
                 
                 with T.no_grad():
                     embedding_layers, _ = self.embedding(x_token_idx)
@@ -156,13 +154,9 @@ class TC():
                 # take embedding from the final layer (|h|=12)
                 x_emb = embedding_layers[11].to('cpu').numpy()
                 
-                # print(x_emb.shape)
                 # take first element of the embedding
                 x_emb = x_emb[:,0,:]
-                # print(x_emb[3])
-                # print(x_emb.shape)
-                
-            
+
                 if is_training:
                     # define scaler and scale input 
                     scaler = preprocessing.StandardScaler().fit(x_emb)
@@ -170,16 +164,62 @@ class TC():
                 
                 x_emb_scaled = self.scaler.transform(x_emb)
                 
-                # print(x_emb_scaled[3])
-                # print(x_emb_scaled.shape)   
+            elif from_speech:
+                #check dimension(multi/single phrase case)
+                # if(type(x[0]) == str): #single sentence
                 
-            elif not(isinstance(x, list)) : # simple forward on word
+                    # strip no more needed after the pre-processing
+                    x_token = [self.tokenizer.tokenize(x_i) for x_i in x]
+                    
+                    max_length_token = max([len(x_i) for x_i in x_token])
+                    for x_i in x_token:
+                        while(len(x_i) < max_length_token):
+                            x_i.append('[PAD]')
+                            
+                    x_token_idx = [self.tokenizer.convert_tokens_to_ids(x_i) for x_i in x_token]
+                    
+                    x_token_idx = T.tensor(x_token_idx).to(self.device)
+                    
+                    with T.no_grad():
+                        embedding_layers, _ = self.embedding(x_token_idx)
+                    
+                    x_emb = embedding_layers[11].to('cpu').numpy()
+                    
+                    x_emb = x_emb[:,0,:]
+                    
+                    if self.scaler == None:
+                        self.loadScaler()
+                        
+                    x_emb_scaled = self.scaler.transform(x_emb)
+                    
+                # else: #multi sentences 
+                #     print("multi sentences case")
+                #     print(x)
+                    
+                #     x_token = [[self.tokenizer.tokenize(x_i) for x_i in x_word] for x_word in x]
+                #     print(x_token)
+                    
+                #     max_length_token = max([max([len(x_i) for x_i in x_word]) for x_word in x_token])
+                #     for x_word in x_token:
+                #         for x_i in x_word:
+                #             while(len(x_i) < max_length_token):
+                #                 x_i.append('[PAD]')
+                                
+                #     print(x_token)
+                    
+                #     x_token_idx = [[self.tokenizer.convert_tokens_to_ids(x_i) for x_i in x_word] for x_word in x_token]
+                #     print(x_token_idx)
+                #     x_token_idx = T.tensor(x_token_idx).to(self.device)
+                    
+                    
+            else: 
+                # forward sentences  # simple forward on word
                 x = x.strip()
                 
                 x_token = self.tokenizer.tokenize(x)
                 x_token_idx = self.tokenizer.convert_tokens_to_ids(x_token)
                 x_token_idx = T.tensor([x_token_idx]).to(self.device)
- 
+     
                 
                 with T.no_grad():
                     embedding_layers, _ = self.embedding(x_token_idx)
@@ -187,9 +227,6 @@ class TC():
                 x_emb = embedding_layers[11].to('cpu').numpy()
                 x_emb = x_emb[:,0,:]
                 x_emb_scaled = self.scaler.transform(x_emb)
-                
-            else: # forward
-                pass
             
         return x_emb_scaled
             
@@ -387,22 +424,62 @@ class TC():
     
     def predict_wordsList2Sentiment(self, words):
         print(words)
+        words = self._preProcessSentence(words)
+        print(len(words))
+        print(words)
+        x_emb = self._wordToEmbedding(words, from_speech= True)
+        print(x_emb.shape)
+        y = self.model.predict(x_emb)
+        print(y.shape)
+        
+        y = np.mean(y, axis=0)
+        
+        return y
+        
         
     def predict_Corpus2Sentiment(self,c):
+        
         if not(self.usePunctuator):
+            # corpus as a full sentence
             return self.predict_wordsList2Sentiment(c)
         
         sents = self._separeteSentences(text)
-        sents = [self._preProcessSentence(sent) for sent in sents]
-        y_sents = [self.predict_wordsList2Sentiment(words) for words in sents]
-    
-
         
+        if len(sents)==1:
+            # no sentences separation needed detected
+            return self.predict_wordsList2Sentiment(c)
+        
+        y_sents = [self.predict_wordsList2Sentiment(words) for words in sents]
+        print(y_sents)
+        y = np.mean(y_sents, axis=0)
+        print(y)
+        
+        return y
+
+    def get_rankedEmotions(self, y_score):
+        emotions = self.emo_sensor_reader.getLabels()
+        ranked_emo = {}
+        for idx,y_val in enumerate(y_score):
+            ranked_emo[emotions[idx]] = y_score[idx]
+        
+        print(ranked_emo)
+        ranked_emo = sorted(ranked_emo.items(), key = lambda kv:(kv[1], kv[0]), reverse = True )
+        print(ranked_emo)
+        return ranked_emo
+        
+
+# ---------------------------> [test section]
         
 new = TC(0)
-text = "today i was having fun playing with my cousin when a stranger came up into the house he was tall and thin he asked about his parents but they weren't at home he said to let them know about the visit "
-new.predict_Corpus2Sentiment(text)
 
+# test sentence from asr emotions ranking
+if False:
+    new.loadModel()
+    new.usePunctuator = True 
+    text = "today i was having fun playing with my cousin when a stranger came up into the house he was tall and thin he asked about his parents but they weren't at home he said to let them know about the visit "
+    new.get_rankedEmotions(new.predict_Corpus2Sentiment(text))
+
+# test single word prediction score
 if False:
     new.train_TC()
     

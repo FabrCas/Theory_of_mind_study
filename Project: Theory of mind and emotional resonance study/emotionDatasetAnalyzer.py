@@ -48,6 +48,7 @@ class emotionSensorReader():
     
     def splitDataset(self, writeFiles = True, test_size = 0.2):
         n_instances = len(self.data)
+        print("Number of instances in the dataset equal to {}".format(n_instances))
         
         startTime = time.time()
 
@@ -109,11 +110,6 @@ class emotionSensorReader():
         print(" ***************** correlation **************** \n")
         print(self.data.corr())
         
-        # graphic correlation 
-        # f,ax = plt.subplots(figsize=(30 ,30))
-        # sns.heatmap(self.data.corr(),annot = True, linewidths = 0.6, fmt = ".4f", ax=ax)
-        # plt.show()
-        # show the first ten rows
         
         print(" ***************** 0-10 rows ***************** \n")
         print(self.data[:10])  #data.head(10)

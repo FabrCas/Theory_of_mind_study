@@ -37,7 +37,7 @@ class MLC(T.nn.Module):
         # self.epoch = args.epoch
         # self.batchSize = args.batchSize
         
-        self.batchSize = 32 #greater batch size lead to an over allocation error
+        self.batchSize = 32 # greater batch size lead to an over allocation error given the huge n of params for the net
         self.workers = 8
         self.lr = 1e-4
         self.n_epochs = 50 
@@ -50,17 +50,13 @@ class MLC(T.nn.Module):
         self.eps=1e-8
         self.disable_torch_grad_focal_loss=True
         
+        # create dataset reader
         self.nus_wide_reader = NusDatasetReader()
-        
-        # retrieve test and training set
-        # nus_wide_dataset.splitDataset(False) 
-        # self.trainSet = nus_wide_dataset.trainSet
-        # self.testSet = nus_wide_dataset.testSet
-        # nus_wide_dataset.freeSpace()
+
         
         # create the RNN
         self.model = ResNet101()
-        # self.model.parameters().half()
+        
         self.model.to(device)
         self.sigmoid = T.nn.Sigmoid()
         
@@ -232,7 +228,8 @@ class MLC(T.nn.Module):
                                        pct_start=0.3)
         
         scaler = GradScaler()
-        
+    
+        # to remove
         if False:
             iterdata = next(iter(loaderTrain))
             
@@ -264,26 +261,13 @@ class MLC(T.nn.Module):
         for n_epoch in range(self.n_epochs) : #self.n_epochs
             loss_cumulative = 0
             for index,(images,labels,encoding_labels) in enumerate(tqdm(loaderTrain)):
-                # print(index)
             
                 T.cuda.empty_cache()
-                # img = images[0]
-                # print(img)
-                # img = T.movedim(img, 0, 2)
-                # img = (img +1)/2
-                # print(img)
-                
-                # plt.imshow(img)
-                # plt.show()
                 
                 optimizer.zero_grad()
                 
                 images = images.to(device)
                 encoding_labels = encoding_labels.to(device)
-                # print(images.shape)
-                # print(images)
-                # print(encoding_labels.shape)
-                # print(encoding_labels)
     
     
                 with autocast():
@@ -293,8 +277,8 @@ class MLC(T.nn.Module):
                 
                 # loss = loss.items()
 
-    
                 scaler.scale(loss).backward()
+                T.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
                 
@@ -316,8 +300,6 @@ class MLC(T.nn.Module):
                                   scheduler.get_last_lr()[0], \
                                   loss))
                 
-
-            # avg_lossEpoch = (loss_cumulative/math.ceil((n_steps/self.batchSize)))
             avg_lossEpoch = (loss_cumulative)/n_steps
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
             loss_cumulative = 0
@@ -341,7 +323,7 @@ class MLC(T.nn.Module):
         self.loadModel(epoch_loaded, test_n)
             
             
-        training_data = self.nus_wide_reader.retrieveTrainingSet()             # limited !
+        training_data = self.nus_wide_reader.retrieveTrainingSet()
         training_history = []
         
         print("- started the continue of training for the model, from epoch {} to {}".format(epoch_loaded+1, final_epoch))
@@ -423,12 +405,11 @@ class MLC(T.nn.Module):
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
             loss_cumulative = 0
             
-            if (n_epoch+1)%1 == 0 and save_model:   # to edit
+            if (n_epoch+1)%10 == 0 and save_model:   # to edit
                 self._saveModel(n_epoch+1+epoch_loaded, new_path)
             
         
-    
-    def validate_MLC(self, threshold_truth = 0.5):
+    def test_MLC(self, threshold_truth = 0.5):
         validate_data = self.nus_wide_reader.retrieveTestSet()
         
         print("- started validation of the model...")
@@ -455,8 +436,6 @@ class MLC(T.nn.Module):
         loaderVal = DataLoader(validate_dataset, batch_size= self.batchSize,
                                  shuffle= False, num_workers= self.workers,
                                  pin_memory= True)
-        
-
         
         self.model.eval()
         
@@ -488,7 +467,6 @@ class MLC(T.nn.Module):
                 with autocast():
                 
                     output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
-                    # print(np.min(output_prob))
 
                     temp_labels = []
                     temp_targets = []
@@ -525,7 +503,6 @@ class MLC(T.nn.Module):
             
             print("\n\n\n")
             
-            
             # flat to 1-D
             predictions = np.concatenate(predictions)
             targets = np.concatenate(targets)
@@ -545,7 +522,7 @@ if True :
     # c.train_MLC()
     c.loadModel(epoch= 50, test_number= 2)
     # c.printSummaryNetwork( (3,224,224) )
-    c.validate_MLC()
+    c.test_MLC()
 else:   
     c.continue_training("models/MLC_2/resNet-50.ckpt", 20)
 

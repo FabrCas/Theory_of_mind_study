@@ -16,6 +16,7 @@ import torchtext as TT
 import torch as T
 from sklearn import svm
 from sklearn import linear_model
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn import preprocessing
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
@@ -70,6 +71,51 @@ class TC():
         text = self.punctuator.punctuate(text)
         sents_list = sent_tokenize(text)
         return sents_list
+    
+    # check whether there's a word that has been wrongly recognized (is out of the context)
+    
+    def _filterRecognizedText(self,text, analyze_word):
+        if not(self.name_embedding == "bert"): return 
+        
+
+        text = re.sub(r'[^\w\s]','',text) 
+        
+        words_list = word_tokenize(text)
+        
+        words_list = [self.stemmer.stem(word) for word in words_list]
+        
+        
+        x_emb = self._wordToEmbedding(words_list, from_speech= True)
+
+        analyze_word = 6
+        
+        x_avg = np.delete(x_emb, analyze_word, axis = 0)
+        # print(x_avg.shape)
+        average_vec = np.mean(x_avg, axis = 0)
+        average_vec = average_vec.reshape(1,-1)
+        # print(x_emb.shape)
+        # print(average_vec.shape)
+        
+        similarities = []
+        for i,emb_word in enumerate(x_emb):
+            similarity = cosine_similarity(emb_word.reshape(1,-1), average_vec)
+
+            similarities.append(similarity[0][0])
+            
+        print(similarities)
+        
+
+            
+        # abs_max = np.max(np.abs(x_emb))
+        
+        # print(abs_max)
+        
+        # x_emb /= abs_max
+        
+        
+        return x_emb
+        
+        
     
     def _preProcessSentence(self, sentence):
         sentence = sentence.lower()
@@ -176,6 +222,8 @@ class TC():
                         while(len(x_i) < max_length_token):
                             x_i.append('[PAD]')
                             
+                    print(x_token)
+                            
                     x_token_idx = [self.tokenizer.convert_tokens_to_ids(x_i) for x_i in x_token]
                     
                     x_token_idx = T.tensor(x_token_idx).to(self.device)
@@ -213,7 +261,7 @@ class TC():
                     
                     
             else: 
-                # forward sentences  # simple forward on word
+                # simple forward on word
                 x = x.strip()
                 
                 x_token = self.tokenizer.tokenize(x)
@@ -226,6 +274,8 @@ class TC():
                 
                 x_emb = embedding_layers[11].to('cpu').numpy()
                 x_emb = x_emb[:,0,:]
+                if self.scaler is None:
+                    self.loadScaler()
                 x_emb_scaled = self.scaler.transform(x_emb)
             
         return x_emb_scaled
@@ -466,6 +516,18 @@ class TC():
         ranked_emo = sorted(ranked_emo.items(), key = lambda kv:(kv[1], kv[0]), reverse = True )
         print(ranked_emo)
         return ranked_emo
+    
+    # generic forward method for word/s and sentence/s
+    def forward(self, x):
+        
+        startTime = time.time()
+        
+        y = self.predict_Corpus2Sentiment(x)
+        y_ranked = self.get_rankedEmotions(y)
+        
+        print("End prediction of emotions, time: {} [s]".format((time.time() -startTime), ))
+        return y
+        
         
 
 # ---------------------------> [test section]
@@ -479,6 +541,119 @@ if False:
     text = "today i was having fun playing with my cousin when a stranger came up into the house he was tall and thin he asked about his parents but they weren't at home he said to let them know about the visit "
     new.get_rankedEmotions(new.predict_Corpus2Sentiment(text))
 
+
+# test identification of wrong word recognized 
+if True:
+    
+    # sentence_ok = "how are you? I am fine thanks"
+    sentence_notok = "how are you? I pen thanks"
+    
+    new.usePunctuator = False
+    # sentence_notok = "today i've played videogames all the day, so relaxing"
+    analyze_word = 4
+    
+    emb = new._filterRecognizedText(sentence_notok,analyze_word)
+    
+        # analyze_word = 6 
+        
+        # print(words_list[analyze_word])
+    
+        # x_emb = self._wordToEmbedding(words_list, from_speech= True)
+        
+        # for i in range(len(words_list)):
+        # -------------------------------------------------------------------------------------------- 
+        #     x_avg = np.delete(x_emb, i, axis = 0)
+        #     # print(x_avg.shape)
+        #     average_vec = np.mean(x_avg, axis = 0)
+        #     average_vec = average_vec.reshape(1,-1)
+        #     # print(x_emb.shape)
+        #     # print(average_vec.shape)
+            
+        #     similarities = []
+        #     for i,emb_word in enumerate(x_emb):
+        #         similarity = cosine_similarity(emb_word.reshape(1,-1), average_vec)
+
+        #         similarities.append(similarity[0][0])
+                
+        #     print(similarities)
+        
+        # -------------------------------------------------------------------------------------------
+            # model = BertForMaskedLM.from_pretrained('bert-base-uncased')
+            # model.eval()
+            
+            # model.to(self.device)
+            
+            # text = re.sub(r'[^\w\s]','',text) 
+            
+            # words_list = word_tokenize(text)
+            
+            # words_list = [self.stemmer.stem(word) for word in words_list]
+            
+            # for word in words_list:
+            #     print(word)
+            
+            # # look at speech case in word embeeding 
+            
+            # # for i in range(len(words_list)):
+            # analyze_word = 6
+                
+            # words_list[analyze_word] = '[MASK]'
+              
+            # x_token = [self.tokenizer.tokenize(x_i) for x_i in words_list]
+            
+            # max_length_token = max([len(x_i) for x_i in x_token])
+            # for x_i in x_token:
+            #     while(len(x_i) < max_length_token):
+            #         x_i.append('[PAD]')
+                    
+            # print(x_token)
+                    
+            # x_token_idx = [self.tokenizer.convert_tokens_to_ids(x_i) for x_i in x_token]
+            
+            # x_token_idx = T.tensor(x_token_idx).to(self.device)
+            
+            # with T.no_grad():
+            #     predictions = model(x_token_idx)
+            
+            # predicted_index = T.argmax(predictions[0, analyze_word]).item()
+            # predicted_token = self.tokenizer.convert_ids_to_tokens([predicted_index])[0]
+            
+            # print(predicted_token)
+                   
+            # ------------------------------------------------------------------------------------------- 
+            
+    # print(emb.shape)
+
+    # emb_ww = np.delete (emb,analyze_word, axis = 0)
+    # print(emb_ww.shape)
+    
+    # average_vec = np.mean(emb_ww, axis = 0)
+
+    
+
+    # acc = 0
+    # print("----------cos----------")
+    # for i,emb_word in enumerate(emb):
+    #     # print(emb_word.shape)
+    #     cs = T.cosine_similarity( T.tensor( np.expand_dims(emb[analyze_word],axis= 0)),T.tensor( np.expand_dims(emb_word,axis= 0) ) )
+    #     print(cs)
+    #     acc += float(cs[0])
+    
+    # print(acc)
+    # print("--------------------")
+      
+    # for emb_word in emb:
+    #     # print(emb_word.shape)
+    #     print(T.cosine_similarity( T.tensor( np.expand_dims(average_vec,axis= 0)),T.tensor( np.expand_dims(emb_word,axis= 0) ) ))
+     
+
+    # delta_vec = emb[analyze_word] - average_vec 
+    # print(delta_vec.shape)
+    # delta = np.linalg.norm(delta_vec)
+    # print(delta)
+    
+    
+
 # test single word prediction score
 if False:
     new.train_TC()
@@ -491,5 +666,6 @@ if False:
     
     y1,x1 = new.predict_Word2Sentiment(t1)
     y2,x2 = new.predict_Word2Sentiment(t2)
+    
     print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
     print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))

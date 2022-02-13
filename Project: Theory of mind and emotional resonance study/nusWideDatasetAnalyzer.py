@@ -5,6 +5,7 @@ import gc
 import time
 from PIL import Image
 import torch as T
+import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
@@ -34,18 +35,23 @@ def myCollate(batch):
 
 class NusWide(Dataset):
     
-    def __init__(self, data,transformationImg = None, transformationLab = None,show = False):
+    def __init__(self, data,transformationImg = None,show = False):
         super().__init__()
         self.data = data
         self.transformationImg = transformationImg
-        self.transformationLab = transformationLab
         self.show = show 
         # self.imgPathAbs = pathToDatasetAbs + "/" + imagesFolder
         # self.imgPathRel = pathToDatasetRel + "/" + imagesFolder
         
-    def _preprocessing(self):
-        pass # histogram equalization, gamma correction, ....
-        
+    def _preprocessing(self, img):
+        # histogram equalization, gamma correction, ....
+
+        img = transforms.functional.adjust_gamma(img, 0.8)
+        img = transforms.functional.adjust_saturation(img ,saturation_factor=1.2)
+        img = transforms.functional.adjust_sharpness(img,sharpness_factor=2)
+        img = transforms.functional.equalize(img)
+ 
+        return img
         
     def __len__(self):
         return len(self.data)
@@ -62,20 +68,38 @@ class NusWide(Dataset):
         
         # img = np.array(img)
         
+        if self.show:
+            print(type(img))
+            img_tmp = np.array(img)
+            plt.imshow(img_tmp)
+            plt.show()
+
+            
+        # additional transformation (not strictly needed)
+        img = self._preprocessing(img)
+        
+        if self.show:
+            pass
+            print(type(img))
+            img_tmp = np.array(img)
+            plt.imshow(img_tmp)
+            plt.show()
+            
         
         if not (self.transformationImg == None):
             img = self.transformationImg(img)
             # print("transformation")
-            
-        # if not (self.transformationLab == None):
-        #     image_encoding = self.transformationLab(image_encoding)
-             
-
+                         
         if self.show:
-            plt.imshow(img)
+            print(type(img))
+            img_tmp = img.numpy()
+            img_tmp = T.movedim(img, 0, 2)
+            img_tmp = (img_tmp +1)/2
+            plt.imshow(img_tmp)
             plt.show()
-            
-        # img = T.HalfTensor(img)
+        
+        self.show = False
+
         
         image_encoding = T.Tensor(image_encoding)
         

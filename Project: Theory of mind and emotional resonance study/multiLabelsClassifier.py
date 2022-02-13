@@ -1,9 +1,5 @@
-import numpy as np 
-import sys 
-import time 
 import os
-import re
-import math
+import numpy as np 
 import gc 
 import torch as T
 from torchsummary import summary
@@ -14,14 +10,12 @@ from torch.cuda.amp import GradScaler, autocast
 from randaugment import RandAugment
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from copy import deepcopy 
-
+from sklearn.metrics import precision_score, recall_score, f1_score,     \
+    average_precision_score, multilabel_confusion_matrix, hamming_loss,  \
+    jaccard_score, label_ranking_loss
+    
 from nusWideDatasetAnalyzer import NusDatasetReader, NusWide
 from models import ResNet101
-from sklearn.metrics import precision_score, recall_score, f1_score, average_precision_score, accuracy_score
-
-
-
 
 device = T.device("cuda:0" if T.cuda.is_available() else "cpu")
 
@@ -138,11 +132,16 @@ class MLC(T.nn.Module):
             os.makedirs(path_save)
         T.save(self.model.state_dict(), path_save + name)
         
+    def loadModel(self, epoch = 70, test_number = "01"):
+        path_load = os.path.join('models/MLC_' + str(test_number)+ '/', 'resNet-{}.ckpt'.format(epoch))
+        ckpt = T.load(path_load)
+        self.model.load_state_dict(ckpt)
+        
         
     def _compute_mAP(self, output, targets, average = "samples"):
         mAP = 0
         n_labels = targets.shape[1]
-        print(n_labels)
+        # print(n_labels)
         ap = np.zeros(n_labels)
         for class_index in range(n_labels):
             # extract values for label
@@ -159,38 +158,184 @@ class MLC(T.nn.Module):
 
         mAP = np.mean(ap)
         return mAP
-        
-    def _computeMetrics(self, output,targets, labels, average = "samples"):
 
-        print(output.shape)
-        print(targets.shape)
-        print(labels.shape)
-        # print(targets[0])
-        # print(labels)
+    def _plot_cm(self,cm, label):
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.matshow(cm, cmap=plt.cm.Greens, alpha=0.5)
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax.text(x= j, y = i, s=cm[i, j], va='center', ha='center', size='xx-large')
+         
+        plt.xlabel('Predictions', fontsize=18)
+        plt.ylabel('Targets', fontsize=18)
+        plt.title('Confusion Matrix '+ label, fontsize=18)
+        plt.savefig("./results/cm_"+label+".png")
+        plt.show()
+    
+    def _compute_cms(self,targets,output,labels, plot_and_save = True):
+                
+        cms = multilabel_confusion_matrix(targets,output,samplewise = False)
+        cms_normalized = {}
+        for index,cm in enumerate(cms):
+
+            cm_norm= cm/np.sum(cm, axis=1)[:, np.newaxis]
+            cms_normalized[labels[index]] = np.round(cm_norm,4)
+            if plot_and_save:
+                self._plot_cm(cm_norm,labels[index])          
         
+        return cms_normalized
+                
+        
+    def _computeMetrics(self,targets, output, labels, average = "samples", save_results = True):  #labels not used
+
+        # print(output.shape)
+        # print(targets.shape)
+        # print(labels.shape)
+
         metrics_results = {
-                            # "accuracy": accuracy_score(targets, output),
-                            "precision":precision_score(targets, output, average = average, zero_division=1),  \
-                            "recall": recall_score(targets, output, average = average, zero_division=1), \
-                            "f1-score": f1_score(targets, output, average= average, zero_division=1), \
-                            "average precision": average_precision_score(targets, output, average= average), \
-                            "mean average precision": self._compute_mAP(output,targets, average)
+                            "precision":precision_score(targets, output, average = average, zero_division=1),    \
+                            "recall": recall_score(targets, output, average = average, zero_division=1),         \
+                            "f1-score": f1_score(targets, output, average= average, zero_division=1),            \
+                            "average_precision": average_precision_score(targets, output, average= average),     \
+                            "ranking_loss": label_ranking_loss(targets, output),                                 \
+                            "hamming_loss": hamming_loss(targets,output),                                        \
+                            "jaccard_score": jaccard_score(targets, output, average= average, zero_division=1),  \
+                            "confusion matrices": self._compute_cms(targets, output, labels, save_results)
+     
+                            
+                            # "mean average precision": self._compute_mAP(output,targets, average)
             }
         
+        if save_results: np.save("./logs/test_results.npy",metrics_results)
+        
+        for k,v in metrics_results.items():
+            if k != "confusion matrices":
+                print("\nmetric: {}, result: {}".format(k,v))
+            else:
+                for kcm,vcm in v.items():
+                    print("\nconfusion matrix for: {}".format(kcm))
+                    print(vcm)
+                    
         return metrics_results
             
-    def loadModel(self, epoch, test_number = 1):
-        path_load = os.path.join('models/MLC_' + str(test_number)+ '/', 'resNet-{}.ckpt'.format(epoch))
-        ckpt = T.load(path_load)
-        self.model.load_state_dict(ckpt)
-        
-        
-    
-        
-    def train_MLC(self, save_model = True):
 
+        
+    def _logs(self, loss_history, performance_history):
+        
+        # path for log 
+        path_trainLogs = "./logs"
+        
+        path_loss = path_trainLogs + "/loss_history.npy"
+        path_perf = path_trainLogs + "/performance_history.npy"
+    
+        np.save(path_loss, loss_history)
+        np.save(path_perf, performance_history)
+        
+        
+    def _plots(self):
+        path_trainLogs = "./logs"
+        path_results = "./results"
+        
+        path_loss = path_trainLogs + "/loss_history.npy"
+        path_perf = path_trainLogs + "/performance_history.npy"
+        
+        if not os.path.exists(path_results):
+            os.makedirs(path_results)
+        
+        # load loss data 
+        
+        loss_history = np.load(path_loss)
+        
+        # loss plot 
+        
+        x = [x[0]+1 for x in  loss_history]
+        y = [x[1] for x in  loss_history]
+        plt.figure()
+        plt.xlabel("Epochs")
+        plt.ylabel("Average Loss over epochs")
+        plt.title("Training Loss")
+        plt.plot(x,y, color = "red")
+        plt.savefig(path_results + "/loss_history.png")
+        plt.show()
+        plt.close()
+        
+        # load performance data 
+        
+        performance_history = np.load(path_perf, allow_pickle= True)
+        # print(performance_history.shape)
+        # print(performance_history)
+        
+        # extract performance data
+        
+        y_precision = [x['precision'] for x in  performance_history]
+        y_recall = [x['recall'] for x in  performance_history]
+        y_f1 = [x['f1-score'] for x in  performance_history]
+        y_ap = [x['average precision'] for x in  performance_history]
+        y_map = [x['mean average precision'] for x in  performance_history]
+        
+        x = [n+1 for n in range(len(performance_history))]
+        
+        # plots
+        # --- precision
+        plt.figure()
+        plt.xlabel("Epochs")
+        plt.ylabel("Precision")
+        plt.title("Training Precision")
+        plt.plot(x, y_precision)
+        plt.savefig(path_results + "/precision_history.png")
+        plt.show()
+        plt.close()
+        
+        # --- recall
+        plt.figure()
+        plt.xlabel("Epochs")
+        plt.ylabel("Recall")
+        plt.title("Training Recall")
+        plt.plot(x, y_recall)
+        plt.savefig(path_results + "/recallhistory.png")
+        plt.show()
+        plt.close()
+        
+        # --- f1-score
+        plt.figure()
+        plt.xlabel("Epochs")
+        plt.ylabel("F1-score")
+        plt.title("Training F1-score")
+        plt.plot(x, y_f1)
+        plt.savefig(path_results + "/f1_history.png")
+        plt.show()
+        plt.close()
+        
+        # --- average precision
+        
+        plt.figure()
+        plt.xlabel("Epochs")
+        plt.ylabel("Average Precision")
+        plt.title("Training Average Precision")
+        plt.plot(x, y_ap)
+        plt.savefig(path_results + "/ap_history.png")
+        plt.show()
+        plt.close()
+        
+        # --- mean average precision
+        
+        plt.figure()
+        plt.xlabel("Epochs")
+        plt.ylabel("MAP")
+        plt.title("Training Mean Average Precision")
+        plt.plot(x, y_map)
+        plt.savefig(path_results + "/map_history.png")
+        plt.show()
+        plt.close()
+        
+
+        
+    def train_MLC(self, n_test, save_model = True, threshold_truth = 0.5):
+
+        from_pos_to_label = self.nus_wide_reader.getLabels()
         training_data = self.nus_wide_reader.retrieveTrainingSet()
-        training_history = []
+        training_history = [] ; training_performance = []
+        srcModel = "models/MLC_0" + n_test + "/"
         
         print("- started training of the model...")
         
@@ -200,10 +345,10 @@ class MLC(T.nn.Module):
                                        RandAugment(),
                                        transforms.ToTensor(),
                                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                       ]),
-                                   transformationLab= transforms.Compose([
-                                       transforms.ToTensor()
-                                       ])
+                                       ]), show= False 
+                                   # transformationLab= transforms.Compose([
+                                   #     transforms.ToTensor()
+                                   #     ])
                                    )
         """
         image = (image - mean) / std   -> range [-1,1]
@@ -232,24 +377,17 @@ class MLC(T.nn.Module):
         # to remove
         if False:
             iterdata = next(iter(loaderTrain))
+            print(len(iterdata))
+            print(len(iterdata[0]))
             
             images = iterdata[0]
             labels = iterdata[1]
             targets = iterdata[2]
-            print(images.shape)
-            print(targets.shape)
-            
-            print(type(images[0]))
-            print(type(images[2]))
-            
-            print(images[0])
-            print(labels[0])
-            print(targets[0])
+
             img = images[0]
             
-    
             img = T.movedim(img, 0, 2)
-            print(img.shape)
+            # print(img.shape)
             img = (img +1)/2 # move the nomalized interval [0,1]
             plt.imshow(img)
             plt.show()
@@ -257,6 +395,7 @@ class MLC(T.nn.Module):
         gc.collect()
         
         self.model.train()
+
         
         for n_epoch in range(self.n_epochs) : #self.n_epochs
             loss_cumulative = 0
@@ -291,8 +430,8 @@ class MLC(T.nn.Module):
                 
                 
                 # store information
-                if index % 100 == 0:
-                    training_history.append([n_epoch, index, loss.item()]) #todo enrichment
+                # if index % 100 == 0:
+                #     training_history.append([n_epoch, index, loss.item()]) #todo enrichment
                     
                 if index % 500 == 0:
                     print('Epoch [{}/{}], Step [{}/{}], LR {:.1e}, Loss: {:.1f}'
@@ -300,31 +439,73 @@ class MLC(T.nn.Module):
                                   scheduler.get_last_lr()[0], \
                                   loss))
                 
+                # if index > 50:
+                #     break
+                
             avg_lossEpoch = (loss_cumulative)/n_steps
+            
+            training_history.append([n_epoch,avg_lossEpoch])
+            
+            # sample from last step the output and measure the performance
+            
+            output_bin = np.array(output.cpu().detach().numpy() > threshold_truth)
+            targets = encoding_labels.cpu().detach().numpy()
+            
+            training_performance.append(self._computeMetrics(output_bin, targets, from_pos_to_label))
+            
+
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
             loss_cumulative = 0
             
-            if (n_epoch+1)%10 == 0 and save_model:
-                self._saveModel(n_epoch+1)
+            if (n_epoch+1)%5 == 0 and save_model:
+                self._saveModel(n_epoch+1, srcModel)
+            
+            # logs and results save
+            self._logs(training_history, training_performance)
+            self._plots()
                 
                 
-    def continue_training(self, srcModel , epochs, save_model = True):
+    def continue_training(self, n_test = "01", epochs = 50, epoch_loaded = 20,save_model = True, threshold_truth = 0.5):
+
+            
+        from_pos_to_label = self.nus_wide_reader.getLabels()
+        path_trainLogs = "./logs"
+        path_loss = path_trainLogs + "/loss_history.npy"
+        path_perf = path_trainLogs + "/performance_history.npy"
+        srcModel = "models/MLC_0" + str(n_test) + "/"
+        
         if not os.path.exists(srcModel):
             raise NameError("path doesn't exist!")
-
-        test_n, epoch_loaded = re.findall(r'\d+',srcModel)
-        test_n = int(test_n); epoch_loaded = int(epoch_loaded)
+            
         final_epoch = epoch_loaded + epochs
-        new_path = "models/MLC_" +str(test_n+1) + "/"
-        if not os.path.exists(new_path):
-            os.mkdir(new_path)
+
+        training_history = np.load(path_loss)[:epoch_loaded].tolist()
+        
+        print(training_history)
+        
+        training_performance = np.load(path_perf, allow_pickle= True)[:epoch_loaded].tolist()
+        
+        # print(training_performance)
+        # print(len(training_performance))
+        # print(len(training_history))
+        
+            
+        # test_n, epoch_loaded = re.findall(r'\d+',srcModel)
+        # test_n = int(test_n); epoch_loaded = int(epoch_loaded)
+
+        
+        # new_path = "models/MLC_" +str(test_n+1) + "/"
+        
+
+        
+        # if not os.path.exists(new_path):
+        #     os.mkdir(new_path)
             
         # load the model
-        self.loadModel(epoch_loaded, test_n)
+        self.loadModel(epoch_loaded, n_test)
             
             
         training_data = self.nus_wide_reader.retrieveTrainingSet()
-        training_history = []
         
         print("- started the continue of training for the model, from epoch {} to {}".format(epoch_loaded+1, final_epoch))
         
@@ -334,10 +515,10 @@ class MLC(T.nn.Module):
                                        RandAugment(),
                                        transforms.ToTensor(),
                                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                       ]),
-                                   transformationLab= transforms.Compose([
-                                       transforms.ToTensor()
                                        ])
+                                   # transformationLab= transforms.Compose([
+                                   #     transforms.ToTensor()
+                                   #     ])
                                    )
         del training_data
         
@@ -387,13 +568,10 @@ class MLC(T.nn.Module):
 
                 scheduler.step()
                 
-                # store information
-                if index % 100 == 0:
-                    training_history.append([n_epoch+1, index, loss.item()]) #todo enrichment
                     
                 if index % 500 == 0:
                     print('Epoch [{}/{}], Step [{}/{}], LR {:.1e}, Loss: {:.1f}'
-                          .format(n_epoch+1, epochs, str(index).zfill(3), str(n_steps-1).zfill(3),
+                          .format(n_epoch+ epoch_loaded +1, epochs + epoch_loaded, str(index).zfill(3), str(n_steps-1).zfill(3),
                                   scheduler.get_last_lr()[0], \
                                   loss))
                 # if index == 100:
@@ -402,102 +580,134 @@ class MLC(T.nn.Module):
 
             # avg_lossEpoch = (loss_cumulative/math.ceil((n_steps/self.batchSize)))
             avg_lossEpoch = (loss_cumulative)/n_steps
+
+            training_history.append([n_epoch + epoch_loaded,avg_lossEpoch])
+            
+            # sample from last step the output and measure the performance
+            
+            output_bin = np.array(output.cpu().detach().numpy() > threshold_truth)
+            targets = encoding_labels.cpu().detach().numpy()
+            
+            training_performance.append(self._computeMetrics(output_bin, targets, from_pos_to_label))
+            
             print("\naverage loss in batch for this epoch: -> {:.2f}".format(avg_lossEpoch))
+            
             loss_cumulative = 0
             
-            if (n_epoch+1)%10 == 0 and save_model:   # to edit
-                self._saveModel(n_epoch+1+epoch_loaded, new_path)
+            if (n_epoch+ epoch_loaded+1)%5 == 0 and save_model:   # to edit
+                self._saveModel(n_epoch+1+epoch_loaded, srcModel)
+            
+            self._logs(training_history, training_performance)
+            self._plots()
             
         
-    def test_MLC(self, threshold_truth = 0.5):
+    def test_MLC(self, threshold_truth = 0.5, load_results = True):
         validate_data = self.nus_wide_reader.retrieveTestSet()
         
-        print("- started validation of the model...")
+        print("- started testing of the model...")
         
         from_pos_to_label = self.nus_wide_reader.getLabels()
-        
+        path_testLogs = "./logs"
+        path_predictionsTest = path_testLogs + "/test_predictions.npy"
+        path_targetsTest = path_testLogs + "/test_targets.npy"
 
-        
-        validate_dataset = NusWide(validate_data,
-                                   transformationImg= transforms.Compose([
-                                       transforms.Resize((224,224)),
-                                       # RandAugment(),
-                                       transforms.ToTensor(),
-                                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                       ]),
-                                   transformationLab= transforms.Compose([
-                                       transforms.ToTensor()
-                                       ])
-                                   )
-
-        del validate_data
-        
-        
-        loaderVal = DataLoader(validate_dataset, batch_size= self.batchSize,
-                                 shuffle= False, num_workers= self.workers,
-                                 pin_memory= True)
-        
-        self.model.eval()
-        
-        test_show_results = True 
-
-        predictions = []; targets = []
-        
-        for index,(images,labels,encoding_labels) in enumerate(tqdm(loaderVal)):
+        if not(load_results):
+            test_dataset = NusWide(validate_data,
+                                       transformationImg= transforms.Compose([
+                                           transforms.Resize((224,224)),
+                                           # RandAugment(),
+                                           transforms.ToTensor(),
+                                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                           ])
+                                       # transformationLab= transforms.Compose([
+                                       #     transforms.ToTensor()
+                                       #     ])
+                                       )
+    
+            del validate_data
             
-            T.cuda.empty_cache()
-
             
-            if test_show_results:
-                img = images[0]
-                img = T.movedim(img, 0, 2)
-                # from [-1,1] to [0,1]
-                img = (img +1)/2
+            loaderVal = DataLoader(test_dataset, batch_size= self.batchSize,
+                                     shuffle= False, num_workers= 1, # self.workes
+                                     pin_memory= True)
+            
+            self.model.eval()
+            
+            test_show_results = False 
+    
+            # predictions = []; targets = []
+            predictions = np.empty((0, 81)); targets = np.empty((0, 81))
+            
+            for index,(images,labels,encoding_labels) in enumerate(tqdm(loaderVal)):
                 
-                plt.imshow(img)
-                plt.show()
-            
-            # images from CPU to GPU
-            images = images.to(device)
-            
-            encoding_labels = encoding_labels.numpy()
-
+                T.cuda.empty_cache()
+    
                 
-            with T.no_grad():
-                with autocast():
+                if test_show_results:
+                    img = images[0]
+                    img = T.movedim(img, 0, 2)
+                    # from [-1,1] to [0,1]
+                    img = (img +1)/2
+                    
+                    plt.imshow(img)
+                    plt.show()
                 
-                    output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
-
-                    temp_labels = []
-                    temp_targets = []
-                    if test_show_results:
-                        for i,val in enumerate(output_prob[0]):
-                            if val > threshold_truth:
-                                temp_labels.append(from_pos_to_label[i])
-                        print("")
-                        print(temp_labels)
+                # images from CPU to GPU
+                images = images.to(device)
+                
+                encoding_labels = encoding_labels.numpy()
+    
+                    
+                with T.no_grad():
+                    with autocast():
+                    
+                        output_prob  = self.sigmoid(self.model(images)).cpu().detach().numpy()
+    
+        
+                        if test_show_results:
+                            temp_labels = []
+                            temp_targets = []
+                            for i,val in enumerate(output_prob[0]):
+                                if val > threshold_truth:
+                                    temp_labels.append(from_pos_to_label[i])
+                            print("")
+                            print(temp_labels)
+                            
+                            for i,val in enumerate(encoding_labels[0]):
+                                if val == 1:
+                                    temp_targets.append(from_pos_to_label[i])
+                                    
+                            print(temp_targets)
+                            
+                            # if index > 1:
+                            #     test_show_results = False
+                            #     break
                         
-                        for i,val in enumerate(encoding_labels[0]):
-                            if val == 1:
-                                temp_targets.append(from_pos_to_label[i])
-                                
-                        print(temp_targets)
+                        # pass from probability to binary classification
+                        output_bin = np.array(output_prob > threshold_truth)
+                        
+                        encoding_labels = np.array(encoding_labels == 1)
+                        
+                        # print(output_bin.shape)
+                        # print(encoding_labels.shape)
+                        
+                        # predictions.append(output_bin)
+                        # targets.append(encoding_labels)
+                        
+                        predictions = np.append(predictions, output_bin, axis  =0)
+                        targets = np.append(targets,encoding_labels, axis  =0)
                     
-                    # pass from probability to binary classification
-                    output_bin = np.array(output_prob > threshold_truth)
-                    
-                    # print(output_bin.shape)
-                    # print(encoding_labels.shape)
-                    
-                    
-                    predictions.append(output_bin)
-                    targets.append(encoding_labels)
-                
-
-            if test_show_results and index == 10:
-                break
-        
-        if not test_show_results:
+            
+            np.save(path_predictionsTest, predictions)
+            np.save(path_targetsTest, targets)     
+            
+        else:
+            # load results 
+            predictions = np.load(path_predictionsTest)
+            targets = np.load(path_targetsTest)
+            
+            
+        if False:
             predictions = np.array(predictions)
             targets = np.array(targets)
             
@@ -510,21 +720,32 @@ class MLC(T.nn.Module):
             evaluations = self._computeMetrics(predictions,targets, from_pos_to_label)
             print(evaluations)
         
+        # predictions = np.array(predictions)
+        # targets = np.array(targets)
+        
+        # print(predictions.shape)
+        # print(targets.shape)
+    
+        self._computeMetrics(targets,predictions,from_pos_to_label,average="samples", save_results= False)
+
+            
+            
         
     # epoch 30 (test1) {'precision': 0.5219604682252553, 'recall': 0.7361859292236855, 'f1-score': 0.5728981285236443, 'average precision': 0.45115118659603126}        
-            
     # epoch 50 (test2) {'precision': 0.6146919796160727, 'recall': 0.7494569581640756, 'f1-score': 0.6359045529747034, 'average precision': 0.5254145702800185, 'mean average precision': 0.2542652866757489}    
                
     
         
 c = MLC(1)
 if True :
-    # c.train_MLC()
-    c.loadModel(epoch= 50, test_number= 2)
+    pass
+    # c.train_MLC("1")
+    c.loadModel()
     # c.printSummaryNetwork( (3,224,224) )
-    c.test_MLC()
+    c.test_MLC(load_results= True)
 else:   
-    c.continue_training("models/MLC_2/resNet-50.ckpt", 20)
+    pass
+    # c.continue_training()
 
 
 

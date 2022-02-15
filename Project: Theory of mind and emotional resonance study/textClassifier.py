@@ -19,7 +19,7 @@ from sklearn import linear_model
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn import preprocessing
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error,explained_variance_score
 from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM
 from punctuator import Punctuator
 import nltk
@@ -39,9 +39,10 @@ class TC():
         self.device = T.device("cuda:0" if T.cuda.is_available() else "cpu")
         self.embedding = None
         self.tokenizer = None
-        self.scaler = None
-        self.model = None
+        self.scaler_emb = None
         
+        self.scaler_tc = None
+        self.model = None
         self.C = 1
         self.eps = 0.1  # eps-tube size for no penalty (squared l2 penalty)
         self.gamma = 'scale' #1e-8 #'scale'   # "auto" or "scale"(not used for linear kernel)
@@ -155,9 +156,9 @@ class TC():
                 if is_training:
                     # define scaler and scale input 
                     scaler = preprocessing.StandardScaler().fit(x_emb)
-                    self.scaler = scaler
+                    self.scaler_emb = scaler
                 
-                x_emb_scaled = self.scaler.transform(x_emb)
+                x_emb_scaled = self.scaler_emb.transform(x_emb)
                 
                 print(x_emb_scaled.shape)   
                 
@@ -167,7 +168,7 @@ class TC():
                 x_emb = np.array(self.embedding[x])
     
                 x_emb = np.expand_dims(x_emb,0)
-                x_emb_scaled = self.scaler.transform(x_emb)
+                x_emb_scaled = self.scaler_emb.transform(x_emb)
         
         elif self.name_embedding == "bert":
             
@@ -206,9 +207,9 @@ class TC():
                 if is_training:
                     # define scaler and scale input 
                     scaler = preprocessing.StandardScaler().fit(x_emb)
-                    self.scaler = scaler
+                    self.scaler_emb = scaler
                 
-                x_emb_scaled = self.scaler.transform(x_emb)
+                x_emb_scaled = self.scaler_emb.transform(x_emb)
                 
             elif from_speech:
                 #check dimension(multi/single phrase case)
@@ -235,10 +236,10 @@ class TC():
                     
                     x_emb = x_emb[:,0,:]
                     
-                    if self.scaler == None:
-                        self.loadScaler()
+                    if self.scaler_emb == None:
+                        self.loadScalerEmb()
                         
-                    x_emb_scaled = self.scaler.transform(x_emb)
+                    x_emb_scaled = self.scaler_emb.transform(x_emb)
                     
                 # else: #multi sentences 
                 #     print("multi sentences case")
@@ -274,9 +275,9 @@ class TC():
                 
                 x_emb = embedding_layers[11].to('cpu').numpy()
                 x_emb = x_emb[:,0,:]
-                if self.scaler is None:
-                    self.loadScaler()
-                x_emb_scaled = self.scaler.transform(x_emb)
+                if self.scaler_emb is None:
+                    self.loadScalerEmb()
+                x_emb_scaled = self.scaler_emb.transform(x_emb)
             
         return x_emb_scaled
             
@@ -302,7 +303,9 @@ class TC():
     def _getTrainSet(self):
         trainSet, _ = self.emo_sensor_reader.loadSplittedDataset()
         return trainSet
-        
+      
+    # ---------------------------- [load and save] ----------------------------
+    
     def _saveModel(self, folder="models/TC_SVM/"):
         if not os.path.exists(folder):
             os.makedirs(folder)
@@ -311,20 +314,8 @@ class TC():
             path_save = os.path.join(folder,"msvr.sav")
         else:
             path_save = os.path.join(folder,"msvr_"+ str(self.name_embedding)+ ".sav")
-        # print(path_save)
+
         pickle.dump(self.model, open(path_save, 'wb'))
-    
-    def _saveScaler(self, folder="models/TC_SVM/scaler"):
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-            
-        path_save = os.path.join(folder,"scaler_xTrain_"+str(self.name_embedding) +".sav")
-        pickle.dump(self.scaler, open(path_save, 'wb'))
-    
-    def loadScaler(self, folder="models/TC_SVM/scaler"):
-        path_save = os.path.join(folder,"scaler_xTrain_"+str(self.name_embedding) +".sav")
-        self.scaler = pickle.load(open(path_save,'rb'))
-        
     
     def loadModel(self, folder="models/TC_SVM/"):
         
@@ -334,9 +325,38 @@ class TC():
             path_load = os.path.join(folder,"msvr_"+ str(self.name_embedding)+ ".sav")
         
         self.model = pickle.load(open(path_load,'rb'))
-        self.loadScaler()
+        self.loadScalerEmb()
+        self.loadScalerTC()
     
+    def _saveScalerEmb(self, folder="models/TC_SVM/scaler"):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            
+        path_save = os.path.join(folder,"scaler_xTrain_"+str(self.name_embedding) +".sav")
+        pickle.dump(self.scaler_emb, open(path_save, 'wb'))
+    
+    def loadScalerEmb(self, folder="models/TC_SVM/scaler"):
+        path_save = os.path.join(folder,"scaler_xTrain_"+str(self.name_embedding) +".sav")
+        self.scaler_emb = pickle.load(open(path_save,'rb'))
+        
+    def _saveScalerTC(self, folder="models/TC_SVM/scaler"):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            
+        path_save = os.path.join(folder,"scaler_yTrain.sav")
+        pickle.dump(self.scaler_emb, open(path_save, 'wb'))
+    
+    def loadScalerTC(self, folder="models/TC_SVM/scaler"):
+        path_save = os.path.join(folder,"scaler_yTrain.sav")
+        self.scaler_emb = pickle.load(open(path_save,'rb'))
+    
+    # ---------------------------- [load and save] ----------------------------
+
     def _computeMetrics(self,y_pred, y_target):
+        
+        # estimate the errors
+        
+        evaluations = {}
         
         mses = []
         maes = []
@@ -347,6 +367,7 @@ class TC():
         mse_disgust = mean_squared_error(y_target[:,0], y_pred[:,0])
         mae_disgust = mean_absolute_error(y_target[:,0], y_pred[:,0])
         rmse_disgust = math.sqrt(mse_disgust)
+        
         mses.append(mse_disgust);maes.append(mae_disgust),rmses.append(rmse_disgust)
         print("-- Disgust:      MSE -> {:.8f}  RMSE -> {:.8f}  MAE -> {:.8f}".format(mse_disgust, rmse_disgust, mae_disgust))
         
@@ -391,29 +412,155 @@ class TC():
         rmse_global= math.sqrt(mse_global)
         mses.append(mse_global);maes.append(mae_global);rmses.append(rmse_global)
         print("-- Global error: MSE -> {:.8f}  RMSE -> {:.8f}  MAE -> {:.8f}".format(mse_global, rmse_global, mae_global) )
-
-        return mses, maes, rmses
+        
+        
+        evaluations['mse'] = mses
+        evaluations['mae'] = maes
+        evaluations['rmse'] = rmses
+        
+        
+        variance_score = explained_variance_score(y_target, y_pred, multioutput="variance_weighted")
+        print("-- Explained variance score -> {:.8f}".format(variance_score))
+        
+        r2 = r2_score(y_target, y_pred, multioutput="variance_weighted")
+        print("-- R2 score-> {:.8f}".format(r2))
+        
+        return evaluations
     
     
     
     def train_TC(self, save_model = True):
-        print("- Training regresssion model...")
-        
+        print("- Training the text classifier model...")
         #works fine glove
-        self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf", degree=3 , \
-                                                  gamma = "scale", C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-3))
+        # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf", degree=3 , \
+        #                                           gamma = "scale", C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-3))
         
         
         # self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=50 , \
         #                                           gamma = "scale", C =10, epsilon= 1e-10, cache_size= 2000, max_iter= 1e6, tol = 1e-8))
         
         # self.model = MultiOutputRegressor(svm.SVR(max_iter= -1) )   
-        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=100000, tol=1e-3))
-        # self.model = MultiOutputRegressor(svm.LinearSVR(max_iter=10000)) 
-        
+        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=10000, tol=1e-10, loss="huber", epsilon= 1e-3, shuffle= True))
+        # self.model = MultiOutputRegressor(svm.LinearSVR(max_iter=1000)) 
         
         # self.model = svm.SVR(kernel=self.kernel_type, degree= self.degree, \
         #                                           gamma = self.gamma, C = self.C, epsilon= self.eps)
+        
+        
+        # --------------------------------------- start train test model tuning
+        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=10000, tol=1e-10, loss="huber", epsilon= 1e-3, shuffle= True))
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.68201780  RMSE -> 0.82584369  MAE -> 0.41854708
+        # -- Surprise:     MSE -> 0.69519581  RMSE -> 0.83378403  MAE -> 0.49595749
+        # -- Neutral:      MSE -> 0.64483460  RMSE -> 0.80301594  MAE -> 0.43231771
+        # -- Anger:        MSE -> 0.74061623  RMSE -> 0.86059063  MAE -> 0.50340635
+        # -- Sad:          MSE -> 0.70089675  RMSE -> 0.83719576  MAE -> 0.50026842
+        # -- Happy:        MSE -> 0.71845831  RMSE -> 0.84761920  MAE -> 0.50647793
+        # -- Fear:         MSE -> 0.73188894  RMSE -> 0.85550508  MAE -> 0.50660566
+        # -- Global error: MSE -> 0.70198692  RMSE -> 0.83784660  MAE -> 0.48051152
+        # -- Explained variance score -> 0.31908248
+        # -- R2 score-> 0.29801308
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 1.20105321  RMSE -> 1.09592573  MAE -> 0.72743288
+        # -- Surprise:     MSE -> 1.27785960  RMSE -> 1.13042452  MAE -> 0.80453054
+        # -- Neutral:      MSE -> 1.00422717  RMSE -> 1.00211136  MAE -> 0.70354187
+        # -- Anger:        MSE -> 1.57838628  RMSE -> 1.25633844  MAE -> 0.83522595
+        # -- Sad:          MSE -> 1.11618963  RMSE -> 1.05649876  MAE -> 0.78382820
+        # -- Happy:        MSE -> 1.06317537  RMSE -> 1.03110396  MAE -> 0.78289954
+        # -- Fear:         MSE -> 1.19423278  RMSE -> 1.09280958  MAE -> 0.79360946
+        # -- Global error: MSE -> 1.20501772  RMSE -> 1.09773299  MAE -> 0.77586692
+        # -- Explained variance score -> -0.11904400
+        # -- R2 score-> -0.15021728
+        # ----------------------------
+        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=100000, tol=1e-10, loss="huber", epsilon= 1e-3, shuffle= True))
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.65478648  RMSE -> 0.80918878  MAE -> 0.39696255
+        # -- Surprise:     MSE -> 0.64283084  RMSE -> 0.80176732  MAE -> 0.45041795
+        # -- Neutral:      MSE -> 0.56919010  RMSE -> 0.75444688  MAE -> 0.38879843
+        # -- Anger:        MSE -> 0.69433832  RMSE -> 0.83326965  MAE -> 0.46996551
+        # -- Sad:          MSE -> 0.62799363  RMSE -> 0.79246049  MAE -> 0.44676221
+        # -- Happy:        MSE -> 0.66795894  RMSE -> 0.81728755  MAE -> 0.46307395
+        # -- Fear:         MSE -> 0.70083705  RMSE -> 0.83716011  MAE -> 0.47897994
+        # -- Global error: MSE -> 0.65113362  RMSE -> 0.80692851  MAE -> 0.44213722
+        # -- Explained variance score -> 0.37042711
+        # -- R2 score-> 0.34886638
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 1.24676049  RMSE -> 1.11658429  MAE -> 0.74595522
+        # -- Surprise:     MSE -> 1.39270070  RMSE -> 1.18012741  MAE -> 0.84818268
+        # -- Neutral:      MSE -> 1.06426576  RMSE -> 1.03163257  MAE -> 0.74626431
+        # -- Anger:        MSE -> 1.67676358  RMSE -> 1.29489906  MAE -> 0.86720580
+        # -- Sad:          MSE -> 1.21756164  RMSE -> 1.10343176  MAE -> 0.83065284
+        # -- Happy:        MSE -> 1.18422187  RMSE -> 1.08821959  MAE -> 0.83723900
+        # -- Fear:         MSE -> 1.23932993  RMSE -> 1.11325196  MAE -> 0.82158852
+        # -- Global error: MSE -> 1.28880057  RMSE -> 1.13525353  MAE -> 0.81386977
+        # -- Explained variance score -> -0.20530776
+        # -- R2 score-> -0.23018994
+        # ----------------------------
+        self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
+                                                  gamma = "scale", C =100, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-5))
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.00000000  RMSE -> 0.00000232  MAE -> 0.00000191
+        # -- Surprise:     MSE -> 0.00000000  RMSE -> 0.00000228  MAE -> 0.00000190
+        # -- Neutral:      MSE -> 0.00000000  RMSE -> 0.00000222  MAE -> 0.00000185
+        # -- Anger:        MSE -> 0.00000000  RMSE -> 0.00000221  MAE -> 0.00000182
+        # -- Sad:          MSE -> 0.00000000  RMSE -> 0.00000230  MAE -> 0.00000190
+        # -- Happy:        MSE -> 0.00000000  RMSE -> 0.00000232  MAE -> 0.00000194
+        # -- Fear:         MSE -> 0.00000000  RMSE -> 0.00000222  MAE -> 0.00000185
+        # -- Global error: MSE -> 0.00000000  RMSE -> 0.00000227  MAE -> 0.00000188
+        # -- Explained variance score -> 1.00000000
+        # -- R2 score-> 1.00000000
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 1.05601337  RMSE -> 1.02762511  MAE -> 0.69402262
+        # -- Surprise:     MSE -> 1.13217727  RMSE -> 1.06403819  MAE -> 0.75169798
+        # -- Neutral:      MSE -> 0.85193311  RMSE -> 0.92300223  MAE -> 0.68601744
+        # -- Anger:        MSE -> 1.52073789  RMSE -> 1.23318202  MAE -> 0.83028540
+        # -- Sad:          MSE -> 0.99861746  RMSE -> 0.99930849  MAE -> 0.74082661
+        # -- Happy:        MSE -> 0.91396671  RMSE -> 0.95601606  MAE -> 0.70172916
+        # -- Fear:         MSE -> 1.21846705  RMSE -> 1.10384195  MAE -> 0.82403264
+        # -- Global error: MSE -> 1.09884470  RMSE -> 1.04825793  MAE -> 0.74694455
+        # -- Explained variance score -> -0.04263489
+        # -- R2 score-> -0.04887267
+        # ----------------------------
+        # self.model = MultiOutputRegressor(svm.SVR(kernel= "poly", degree=15 , \
+        #                                           gamma = "scale", C =1, epsilon= 1e-8, cache_size= 2000, max_iter= 10000, tol = 1e-20))
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 1.20414182  RMSE -> 1.09733396  MAE -> 0.67794152
+        # -- Surprise:     MSE -> 1.08768902  RMSE -> 1.04292330  MAE -> 0.70928672
+        # -- Neutral:      MSE -> 1.08449716  RMSE -> 1.04139194  MAE -> 0.70862276
+        # -- Anger:        MSE -> 1.58653129  RMSE -> 1.25957584  MAE -> 0.79186453
+        # -- Sad:          MSE -> 0.96416530  RMSE -> 0.98191919  MAE -> 0.69995105
+        # -- Happy:        MSE -> 0.88559179  RMSE -> 0.94105887  MAE -> 0.65996352
+        # -- Fear:         MSE -> 1.10232244  RMSE -> 1.04991544  MAE -> 0.72696950
+        # -- Global error: MSE -> 1.13070555  RMSE -> 1.06334639  MAE -> 0.71065709
+        # -- Explained variance score -> -0.00410389
+        # -- R2 score-> -0.07928459
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.67043601  RMSE -> 0.81880157  MAE -> 0.37866740
+        # -- Surprise:     MSE -> 0.63613557  RMSE -> 0.79758107  MAE -> 0.42149205
+        # -- Neutral:      MSE -> 0.67979628  RMSE -> 0.82449759  MAE -> 0.40463515
+        # -- Anger:        MSE -> 0.52126619  RMSE -> 0.72198767  MAE -> 0.38463306
+        # -- Sad:          MSE -> 0.65961440  RMSE -> 0.81216648  MAE -> 0.42609316
+        # -- Happy:        MSE -> 0.58094241  RMSE -> 0.76219578  MAE -> 0.40637442
+        # -- Fear:         MSE -> 0.64181690  RMSE -> 0.80113476  MAE -> 0.41652845
+        # -- Global error: MSE -> 0.62714396  RMSE -> 0.79192422  MAE -> 0.40548910
+        # -- Explained variance score -> 0.39701860
+        # -- R2 score-> 0.37285604
+        
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        #----------------------------
+        # ----------------------------------------- end train test model tuning
+        
+        
         
         trainset = self._getTrainSet()
         
@@ -422,36 +569,55 @@ class TC():
         
         # targets to numpy array 
         y = np.array(y)
+            
+        # scale targets
+        self.scaler_tc = preprocessing.StandardScaler().fit(y)
+        y = self.scaler_tc.transform(y)
         
+
         x_emb_scaled = self._wordToEmbedding(x, is_training= True)
         
         self.model.fit(x_emb_scaled,y)
         
         if save_model: 
             self._saveModel()
-            self._saveScaler()
+            self._saveScalerEmb()
+            self._saveScalerTC()
             
         gc.collect()
         
     
-    def test_TC(self):
-        print("- Testing regresssion model...")
+    def test_TC(self, setType = "test"):
+        print("- Testing the text classifier model...")
         
         if self.model == None:
             self.loadModel()
             
-        testset = self._getTestSet()
+        if self.scaler_tc == None:
+            self.loadScalerTC()
+            
+        if setType == "train": testset = self._getTrainSet()
+        else: testset = self._getTestSet()
+        
         # separate x and y from testSet
         x,y = testset[:,0],testset[:,1:]
         
         # targets to numpy array 
         y = np.array(y)
         
+        # scale targets
+        y = self.scaler_tc.transform(y)
+        
         # process x
         x_emb_scaled = self._wordToEmbedding(x,is_testing=True)
         
         # make predictions
         y_pred = self.model.predict(x_emb_scaled)
+        
+        # print(y_pred.shape)
+        # print(y_pred)
+        # print(y.shape)
+        # print(y)
         
         # measure the error
         self._computeMetrics(y_pred,y)
@@ -525,8 +691,8 @@ class TC():
         y = self.predict_Corpus2Sentiment(x)
         y_ranked = self.get_rankedEmotions(y)
         
-        print("End prediction of emotions, time: {} [s]".format((time.time() -startTime), ))
-        return y
+        print("End prediction of emotions, time: {} [s]".format((time.time() -startTime)))
+        return y,y_ranked
         
         
 
@@ -543,7 +709,7 @@ if False:
 
 
 # test identification of wrong word recognized 
-if True:
+if False:
     
     # sentence_ok = "how are you? I am fine thanks"
     sentence_notok = "how are you? I pen thanks"
@@ -655,17 +821,17 @@ if True:
     
 
 # test single word prediction score
-if False:
-    new.train_TC()
+if True:
+    new.train_TC(save_model=False)
+
+    # t1 = "sun"
+    # t2 = "injured"
     
-    # new.loadModel()
-    # new.test_TC()
+    # y1,x1 = new.predict_Word2Sentiment(t1)
+    # y2,x2 = new.predict_Word2Sentiment(t2)
     
-    t1 = "sun"
-    t2 = "injured"
+    # print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
+    # print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
     
-    y1,x1 = new.predict_Word2Sentiment(t1)
-    y2,x2 = new.predict_Word2Sentiment(t2)
-    
-    print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
-    print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
+    new.test_TC(setType ="train")
+    new.test_TC(setType = "test")

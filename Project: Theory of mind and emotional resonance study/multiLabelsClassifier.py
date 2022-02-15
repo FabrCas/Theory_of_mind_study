@@ -2,6 +2,7 @@ import os
 import numpy as np 
 import gc 
 import torch as T
+from PIL import Image
 from torchsummary import summary
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -14,7 +15,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score,     \
     average_precision_score, multilabel_confusion_matrix, hamming_loss,  \
     jaccard_score, label_ranking_loss
     
-from nusWideDatasetAnalyzer import NusDatasetReader, NusWide
+from nusWideDatasetAnalyzer import NusDatasetReader, NusWide, preprocess
 from models import ResNet101
 
 device = T.device("cuda:0" if T.cuda.is_available() else "cpu")
@@ -53,6 +54,15 @@ class MLC(T.nn.Module):
         
         self.model.to(device)
         self.sigmoid = T.nn.Sigmoid()
+        self.threshold_truth = 0.5
+        
+        # trasformation input
+        self.toModel_transf = transforms.Compose([
+            transforms.Resize((224,224)),
+            # RandAugment(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
         
         
 
@@ -137,28 +147,6 @@ class MLC(T.nn.Module):
         ckpt = T.load(path_load)
         self.model.load_state_dict(ckpt)
         
-        
-    def _compute_mAP(self, output, targets, average = "samples"):
-        mAP = 0
-        n_labels = targets.shape[1]
-        # print(n_labels)
-        ap = np.zeros(n_labels)
-        for class_index in range(n_labels):
-            # extract values for label
-            output_label = output[:,class_index] ; target_label = targets[:,class_index]
-            # average precision
-            ap[class_index] = average_precision_score(target_label, output_label, average=average)
-
-        where_nans = np.isnan(ap)
-        for val in where_nans:
-            if val== True:
-                print("found nan value, substitution")
-                ap[where_nans] = 1
-                break
-
-        mAP = np.mean(ap)
-        return mAP
-
     def _plot_cm(self,cm, label):
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.matshow(cm, cmap=plt.cm.Greens, alpha=0.5)
@@ -202,8 +190,6 @@ class MLC(T.nn.Module):
                             "jaccard_score": jaccard_score(targets, output, average= average, zero_division=1),  \
                             "confusion matrices": self._compute_cms(targets, output, labels, save_results)
      
-                            
-                            # "mean average precision": self._compute_mAP(output,targets, average)
             }
         
         if save_results: np.save("./logs/test_results.npy",metrics_results)
@@ -330,14 +316,14 @@ class MLC(T.nn.Module):
         
 
         
-    def train_MLC(self, n_test, save_model = True, threshold_truth = 0.5):
+    def train_MLC(self, n_test, save_model = True):
 
         from_pos_to_label = self.nus_wide_reader.getLabels()
         training_data = self.nus_wide_reader.retrieveTrainingSet()
         training_history = [] ; training_performance = []
         srcModel = "models/MLC_0" + n_test + "/"
         
-        print("- started training of the model...")
+        print("- started training of the multi labels classifier...")
         
         training_dataset = NusWide(training_data,
                                    transformationImg= transforms.Compose([
@@ -448,7 +434,7 @@ class MLC(T.nn.Module):
             
             # sample from last step the output and measure the performance
             
-            output_bin = np.array(output.cpu().detach().numpy() > threshold_truth)
+            output_bin = np.array(output.cpu().detach().numpy() > self.threshold_truth)
             targets = encoding_labels.cpu().detach().numpy()
             
             training_performance.append(self._computeMetrics(output_bin, targets, from_pos_to_label))
@@ -465,7 +451,7 @@ class MLC(T.nn.Module):
             self._plots()
                 
                 
-    def continue_training(self, n_test = "01", epochs = 50, epoch_loaded = 20,save_model = True, threshold_truth = 0.5):
+    def continue_training(self, n_test = "01", epochs = 50, epoch_loaded = 20,save_model = True):
 
             
         from_pos_to_label = self.nus_wide_reader.getLabels()
@@ -585,7 +571,7 @@ class MLC(T.nn.Module):
             
             # sample from last step the output and measure the performance
             
-            output_bin = np.array(output.cpu().detach().numpy() > threshold_truth)
+            output_bin = np.array(output.cpu().detach().numpy() > self.threshold_truth)
             targets = encoding_labels.cpu().detach().numpy()
             
             training_performance.append(self._computeMetrics(output_bin, targets, from_pos_to_label))
@@ -601,7 +587,7 @@ class MLC(T.nn.Module):
             self._plots()
             
         
-    def test_MLC(self, threshold_truth = 0.5, load_results = True):
+    def test_MLC(self, load_results = True):
         validate_data = self.nus_wide_reader.retrieveTestSet()
         
         print("- started testing of the model...")
@@ -613,12 +599,7 @@ class MLC(T.nn.Module):
 
         if not(load_results):
             test_dataset = NusWide(validate_data,
-                                       transformationImg= transforms.Compose([
-                                           transforms.Resize((224,224)),
-                                           # RandAugment(),
-                                           transforms.ToTensor(),
-                                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                           ])
+                                       transformationImg= self.toModel_transf
                                        # transformationLab= transforms.Compose([
                                        #     transforms.ToTensor()
                                        #     ])
@@ -668,7 +649,7 @@ class MLC(T.nn.Module):
                             temp_labels = []
                             temp_targets = []
                             for i,val in enumerate(output_prob[0]):
-                                if val > threshold_truth:
+                                if val > self.threshold_truth:
                                     temp_labels.append(from_pos_to_label[i])
                             print("")
                             print(temp_labels)
@@ -684,7 +665,7 @@ class MLC(T.nn.Module):
                             #     break
                         
                         # pass from probability to binary classification
-                        output_bin = np.array(output_prob > threshold_truth)
+                        output_bin = np.array(output_prob > self.threshold_truth)
                         
                         encoding_labels = np.array(encoding_labels == 1)
                         
@@ -728,8 +709,68 @@ class MLC(T.nn.Module):
     
         self._computeMetrics(targets,predictions,from_pos_to_label,average="samples", save_results= False)
 
+    def forward(self,x, show = True):
+        
+        from_pos_to_label = self.nus_wide_reader.getLabels()
+        
+        # list for the outcome
+        results = []
+        
+        # pre-processing of the image/s
+        x = preprocess(x)
+        
+        # load the model
+        self.loadModel()
+        
+        if show:
+            x_tmp = np.array(x)
+            plt.imshow(x_tmp)
+            plt.show()
             
+        # resize,normalize and trasform to Tensor
+        x = self.toModel_transf(x)
+        if show:
+            img_tmp = T.movedim(x, 0, 2)
+            img_tmp = (img_tmp +1)/2
+            plt.imshow(img_tmp)
+            plt.show()
+        
+        # add fist dimension and send to GPU
+        if len(x.shape) != 4: x = T.unsqueeze(x,axis = 0)
+        
+        # send to GPU
+        x = x.to(device)
+        
+        # x = T.zeros([1,3,224,224], dtype=T.float32).to(device)
+        
+        # get probabilities
+        y  = self.sigmoid(self.model(x)).cpu().detach().numpy()[0]
+        
+        # get classification outcome for label
+        # the threshold can be reduced to get more labels, i.e: 0.08
+        y_bin = np.array(y > self.threshold_truth) 
+        
+        # manage case for samples with no classification found
+        if np.count_nonzero(y_bin == True) == 0:
+            print("The image has no recognizable concepts from NusWide dataset")
+            max_val = np.max(y)
+            index_max = np.where(y == max_val)[0][0]
+            print("Anyway, the most probable classification is: {}, with a probability of {}".format(from_pos_to_label[index_max],max_val))
+            results.append(from_pos_to_label[index_max])
+        else:
+            print("Results for the image:")
+            for i,val in enumerate(y_bin):
+                if val == True:
+                    results.append(from_pos_to_label[i])
+            print(results)
+        
+        return results
+    
             
+    
+        
+        
+        
         
     # epoch 30 (test1) {'precision': 0.5219604682252553, 'recall': 0.7361859292236855, 'f1-score': 0.5728981285236443, 'average precision': 0.45115118659603126}        
     # epoch 50 (test2) {'precision': 0.6146919796160727, 'recall': 0.7494569581640756, 'f1-score': 0.6359045529747034, 'average precision': 0.5254145702800185, 'mean average precision': 0.2542652866757489}    
@@ -737,16 +778,22 @@ class MLC(T.nn.Module):
     
         
 c = MLC(1)
-if True :
+if False :
     pass
     # c.train_MLC("1")
-    c.loadModel()
+    # c.loadModel()
     # c.printSummaryNetwork( (3,224,224) )
-    c.test_MLC(load_results= True)
-else:   
+    # c.test_MLC(load_results= True)
+elif False:   
     pass
     # c.continue_training()
-
+else:
+    img = Image.open("./test2.jpg").convert('RGB')
+    img_temp = np.array(img)
+    plt.imshow(img_temp)
+    plt.show()
+    # c.model.to("cpu")
+    c.forward(img, True)
 
 
 

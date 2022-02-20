@@ -429,7 +429,7 @@ class TC():
     
     
     
-    def train_TC(self, save_model = True):
+    def train_TC(self, save_model = True, use_full = False):
         print("- Training the text classifier model...")
         #works fine glove
         # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf", degree=3 , \
@@ -498,8 +498,8 @@ class TC():
         # -- Explained variance score -> -0.20530776
         # -- R2 score-> -0.23018994
         # ----------------------------
-        self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
-                                                  gamma = "scale", C =100, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-5))
+        # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
+        #                                           gamma = "scale", C =100, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-5))
         # - Computing evaluation metrics for the text classifier:
         # -- Disgust:      MSE -> 0.00000000  RMSE -> 0.00000232  MAE -> 0.00000191
         # -- Surprise:     MSE -> 0.00000000  RMSE -> 0.00000228  MAE -> 0.00000190
@@ -549,8 +549,37 @@ class TC():
         # -- Explained variance score -> 0.39701860
         # -- R2 score-> 0.37285604
         
+        #---------------------------- [FULL]
+        # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
+        #                                           gamma = "scale", C =100, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-5))
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.00000000  RMSE -> 0.00000223  MAE -> 0.00000185
+        # -- Surprise:     MSE -> 0.00000000  RMSE -> 0.00000224  MAE -> 0.00000184
+        # -- Neutral:      MSE -> 0.00000000  RMSE -> 0.00000223  MAE -> 0.00000185
+        # -- Anger:        MSE -> 0.00000000  RMSE -> 0.00000225  MAE -> 0.00000187
+        # -- Sad:          MSE -> 0.00000000  RMSE -> 0.00000229  MAE -> 0.00000192
+        # -- Happy:        MSE -> 0.00000000  RMSE -> 0.00000235  MAE -> 0.00000195
+        # -- Fear:         MSE -> 0.00000000  RMSE -> 0.00000225  MAE -> 0.00000184
+        # -- Global error: MSE -> 0.00000000  RMSE -> 0.00000226  MAE -> 0.00000187
+        # -- Explained variance score -> 1.00000000
+        # -- R2 score-> 1.00000000
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.57019746  RMSE -> 0.75511420  MAE -> 0.54662295
+        # -- Surprise:     MSE -> 0.67917048  RMSE -> 0.82411800  MAE -> 0.56613400
+        # -- Neutral:      MSE -> 0.49812895  RMSE -> 0.70578251  MAE -> 0.52954500
+        # -- Anger:        MSE -> 0.81948133  RMSE -> 0.90525208  MAE -> 0.62291246
+        # -- Sad:          MSE -> 0.60735851  RMSE -> 0.77933209  MAE -> 0.56441906
+        # -- Happy:        MSE -> 0.55032294  RMSE -> 0.74183755  MAE -> 0.54693816
+        # -- Fear:         MSE -> 0.64922295  RMSE -> 0.80574373  MAE -> 0.61840579
+        # -- Global error: MSE -> 0.62484038  RMSE -> 0.79046845  MAE -> 0.57071106
+        # -- Explained variance score -> 0.39920691
+        # -- R2 score-> 0.39425261
         #----------------------------
-        #----------------------------
+        self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
+                                                  gamma = "scale", C = 5, epsilon= 1e-3, cache_size= 2000, max_iter= -1, tol = 1e-5))
+  
         #----------------------------
         #----------------------------
         #----------------------------
@@ -563,6 +592,12 @@ class TC():
         
         
         trainset = self._getTrainSet()
+        
+        if use_full:
+            print("- Using the full dataset for training...")
+            tmp = self._getTestSet()
+            trainset = np.concatenate((trainset,tmp))
+ 
         
         # separate x and y from trainSet
         x,y = trainset[:,0],trainset[:,1:]
@@ -822,8 +857,12 @@ if False:
 
 # test single word prediction score
 if True:
-    new.train_TC(save_model=False)
+    new.train_TC(save_model=True, use_full=True)
 
+
+    new.test_TC(setType ="train")
+    new.test_TC(setType = "test")
+    
     # t1 = "sun"
     # t2 = "injured"
     
@@ -832,6 +871,3 @@ if True:
     
     # print(T.cosine_similarity(T.tensor(x1),T.tensor(x2)))
     # print(T.cosine_similarity(T.tensor(y1),T.tensor(y2)))
-    
-    new.test_TC(setType ="train")
-    new.test_TC(setType = "test")

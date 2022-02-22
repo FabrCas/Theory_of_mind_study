@@ -16,7 +16,7 @@ def parse_arguments():
     parser.add_argument('--useGPU', type=bool, default=True, help="Usage to make compitations on tensors")
     parser.add_argument('--verbose', type=bool, default=True, help="Verbose execution of the application")
     
-    parser.add_argument('--learning', type=bool, default=True, help="learning models, then execute")
+    parser.add_argument('--learning', type=bool, default=False, help="learning models, then execute")
     
     parser.add_argument('--saveDir', type=str, default='models', help='Folder in which are saved models')
     parser.add_argument('--resultDir', type=str, default='results', help='Folder in which are saved results')
@@ -81,7 +81,9 @@ def check_arguments(args):
         os.makedirs(args.logDir)
     
     return args
-        
+
+def testSystem():
+    pass
     
 def main():
     args = parse_arguments()
@@ -98,8 +100,7 @@ def main():
         # learn
         # execute
     else:
-        pass
-        # execute
+        testSystem()
             
 
     

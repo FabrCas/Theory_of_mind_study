@@ -73,6 +73,6 @@ class Listener():
 
 # ---------------------------> [test section]
     
-if False
+if False:
     new = Listener()
     new.recognize_audio("test.wav")

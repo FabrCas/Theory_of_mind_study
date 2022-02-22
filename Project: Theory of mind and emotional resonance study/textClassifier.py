@@ -431,162 +431,35 @@ class TC():
     
     def train_TC(self, save_model = True, use_full = False):
         print("- Training the text classifier model...")
-        #works fine glove
-        # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf", degree=3 , \
-        #                                           gamma = "scale", C =1000, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-3))
         
-        
-        # self.model = MultiOutputRegressor(svm.SVR(kernel=self.kernel_type, degree=50 , \
-        #                                           gamma = "scale", C =10, epsilon= 1e-10, cache_size= 2000, max_iter= 1e6, tol = 1e-8))
-        
-        # self.model = MultiOutputRegressor(svm.SVR(max_iter= -1) )   
-        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=10000, tol=1e-10, loss="huber", epsilon= 1e-3, shuffle= True))
-        # self.model = MultiOutputRegressor(svm.LinearSVR(max_iter=1000)) 
-        
-        # self.model = svm.SVR(kernel=self.kernel_type, degree= self.degree, \
-        #                                           gamma = self.gamma, C = self.C, epsilon= self.eps)
-        
-        
-        # --------------------------------------- start train test model tuning
-        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=10000, tol=1e-10, loss="huber", epsilon= 1e-3, shuffle= True))
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 0.68201780  RMSE -> 0.82584369  MAE -> 0.41854708
-        # -- Surprise:     MSE -> 0.69519581  RMSE -> 0.83378403  MAE -> 0.49595749
-        # -- Neutral:      MSE -> 0.64483460  RMSE -> 0.80301594  MAE -> 0.43231771
-        # -- Anger:        MSE -> 0.74061623  RMSE -> 0.86059063  MAE -> 0.50340635
-        # -- Sad:          MSE -> 0.70089675  RMSE -> 0.83719576  MAE -> 0.50026842
-        # -- Happy:        MSE -> 0.71845831  RMSE -> 0.84761920  MAE -> 0.50647793
-        # -- Fear:         MSE -> 0.73188894  RMSE -> 0.85550508  MAE -> 0.50660566
-        # -- Global error: MSE -> 0.70198692  RMSE -> 0.83784660  MAE -> 0.48051152
-        # -- Explained variance score -> 0.31908248
-        # -- R2 score-> 0.29801308
-        # - Testing the text classifier model...
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 1.20105321  RMSE -> 1.09592573  MAE -> 0.72743288
-        # -- Surprise:     MSE -> 1.27785960  RMSE -> 1.13042452  MAE -> 0.80453054
-        # -- Neutral:      MSE -> 1.00422717  RMSE -> 1.00211136  MAE -> 0.70354187
-        # -- Anger:        MSE -> 1.57838628  RMSE -> 1.25633844  MAE -> 0.83522595
-        # -- Sad:          MSE -> 1.11618963  RMSE -> 1.05649876  MAE -> 0.78382820
-        # -- Happy:        MSE -> 1.06317537  RMSE -> 1.03110396  MAE -> 0.78289954
-        # -- Fear:         MSE -> 1.19423278  RMSE -> 1.09280958  MAE -> 0.79360946
-        # -- Global error: MSE -> 1.20501772  RMSE -> 1.09773299  MAE -> 0.77586692
-        # -- Explained variance score -> -0.11904400
-        # -- R2 score-> -0.15021728
-        # ----------------------------
-        # self.model = MultiOutputRegressor(linear_model.SGDRegressor(max_iter=100000, tol=1e-10, loss="huber", epsilon= 1e-3, shuffle= True))
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 0.65478648  RMSE -> 0.80918878  MAE -> 0.39696255
-        # -- Surprise:     MSE -> 0.64283084  RMSE -> 0.80176732  MAE -> 0.45041795
-        # -- Neutral:      MSE -> 0.56919010  RMSE -> 0.75444688  MAE -> 0.38879843
-        # -- Anger:        MSE -> 0.69433832  RMSE -> 0.83326965  MAE -> 0.46996551
-        # -- Sad:          MSE -> 0.62799363  RMSE -> 0.79246049  MAE -> 0.44676221
-        # -- Happy:        MSE -> 0.66795894  RMSE -> 0.81728755  MAE -> 0.46307395
-        # -- Fear:         MSE -> 0.70083705  RMSE -> 0.83716011  MAE -> 0.47897994
-        # -- Global error: MSE -> 0.65113362  RMSE -> 0.80692851  MAE -> 0.44213722
-        # -- Explained variance score -> 0.37042711
-        # -- R2 score-> 0.34886638
-        # - Testing the text classifier model...
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 1.24676049  RMSE -> 1.11658429  MAE -> 0.74595522
-        # -- Surprise:     MSE -> 1.39270070  RMSE -> 1.18012741  MAE -> 0.84818268
-        # -- Neutral:      MSE -> 1.06426576  RMSE -> 1.03163257  MAE -> 0.74626431
-        # -- Anger:        MSE -> 1.67676358  RMSE -> 1.29489906  MAE -> 0.86720580
-        # -- Sad:          MSE -> 1.21756164  RMSE -> 1.10343176  MAE -> 0.83065284
-        # -- Happy:        MSE -> 1.18422187  RMSE -> 1.08821959  MAE -> 0.83723900
-        # -- Fear:         MSE -> 1.23932993  RMSE -> 1.11325196  MAE -> 0.82158852
-        # -- Global error: MSE -> 1.28880057  RMSE -> 1.13525353  MAE -> 0.81386977
-        # -- Explained variance score -> -0.20530776
-        # -- R2 score-> -0.23018994
-        # ----------------------------
-        # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
-        #                                           gamma = "scale", C =100, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-5))
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 0.00000000  RMSE -> 0.00000232  MAE -> 0.00000191
-        # -- Surprise:     MSE -> 0.00000000  RMSE -> 0.00000228  MAE -> 0.00000190
-        # -- Neutral:      MSE -> 0.00000000  RMSE -> 0.00000222  MAE -> 0.00000185
-        # -- Anger:        MSE -> 0.00000000  RMSE -> 0.00000221  MAE -> 0.00000182
-        # -- Sad:          MSE -> 0.00000000  RMSE -> 0.00000230  MAE -> 0.00000190
-        # -- Happy:        MSE -> 0.00000000  RMSE -> 0.00000232  MAE -> 0.00000194
-        # -- Fear:         MSE -> 0.00000000  RMSE -> 0.00000222  MAE -> 0.00000185
-        # -- Global error: MSE -> 0.00000000  RMSE -> 0.00000227  MAE -> 0.00000188
-        # -- Explained variance score -> 1.00000000
-        # -- R2 score-> 1.00000000
-        # - Testing the text classifier model...
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 1.05601337  RMSE -> 1.02762511  MAE -> 0.69402262
-        # -- Surprise:     MSE -> 1.13217727  RMSE -> 1.06403819  MAE -> 0.75169798
-        # -- Neutral:      MSE -> 0.85193311  RMSE -> 0.92300223  MAE -> 0.68601744
-        # -- Anger:        MSE -> 1.52073789  RMSE -> 1.23318202  MAE -> 0.83028540
-        # -- Sad:          MSE -> 0.99861746  RMSE -> 0.99930849  MAE -> 0.74082661
-        # -- Happy:        MSE -> 0.91396671  RMSE -> 0.95601606  MAE -> 0.70172916
-        # -- Fear:         MSE -> 1.21846705  RMSE -> 1.10384195  MAE -> 0.82403264
-        # -- Global error: MSE -> 1.09884470  RMSE -> 1.04825793  MAE -> 0.74694455
-        # -- Explained variance score -> -0.04263489
-        # -- R2 score-> -0.04887267
-        # ----------------------------
-        # self.model = MultiOutputRegressor(svm.SVR(kernel= "poly", degree=15 , \
-        #                                           gamma = "scale", C =1, epsilon= 1e-8, cache_size= 2000, max_iter= 10000, tol = 1e-20))
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 1.20414182  RMSE -> 1.09733396  MAE -> 0.67794152
-        # -- Surprise:     MSE -> 1.08768902  RMSE -> 1.04292330  MAE -> 0.70928672
-        # -- Neutral:      MSE -> 1.08449716  RMSE -> 1.04139194  MAE -> 0.70862276
-        # -- Anger:        MSE -> 1.58653129  RMSE -> 1.25957584  MAE -> 0.79186453
-        # -- Sad:          MSE -> 0.96416530  RMSE -> 0.98191919  MAE -> 0.69995105
-        # -- Happy:        MSE -> 0.88559179  RMSE -> 0.94105887  MAE -> 0.65996352
-        # -- Fear:         MSE -> 1.10232244  RMSE -> 1.04991544  MAE -> 0.72696950
-        # -- Global error: MSE -> 1.13070555  RMSE -> 1.06334639  MAE -> 0.71065709
-        # -- Explained variance score -> -0.00410389
-        # -- R2 score-> -0.07928459
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 0.67043601  RMSE -> 0.81880157  MAE -> 0.37866740
-        # -- Surprise:     MSE -> 0.63613557  RMSE -> 0.79758107  MAE -> 0.42149205
-        # -- Neutral:      MSE -> 0.67979628  RMSE -> 0.82449759  MAE -> 0.40463515
-        # -- Anger:        MSE -> 0.52126619  RMSE -> 0.72198767  MAE -> 0.38463306
-        # -- Sad:          MSE -> 0.65961440  RMSE -> 0.81216648  MAE -> 0.42609316
-        # -- Happy:        MSE -> 0.58094241  RMSE -> 0.76219578  MAE -> 0.40637442
-        # -- Fear:         MSE -> 0.64181690  RMSE -> 0.80113476  MAE -> 0.41652845
-        # -- Global error: MSE -> 0.62714396  RMSE -> 0.79192422  MAE -> 0.40548910
-        # -- Explained variance score -> 0.39701860
-        # -- R2 score-> 0.37285604
-        
-        #---------------------------- [FULL]
-        # self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
-        #                                           gamma = "scale", C =100, epsilon= 1e-8, cache_size= 2000, max_iter= -1, tol = 1e-5))
-        # - Testing the text classifier model...
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 0.00000000  RMSE -> 0.00000223  MAE -> 0.00000185
-        # -- Surprise:     MSE -> 0.00000000  RMSE -> 0.00000224  MAE -> 0.00000184
-        # -- Neutral:      MSE -> 0.00000000  RMSE -> 0.00000223  MAE -> 0.00000185
-        # -- Anger:        MSE -> 0.00000000  RMSE -> 0.00000225  MAE -> 0.00000187
-        # -- Sad:          MSE -> 0.00000000  RMSE -> 0.00000229  MAE -> 0.00000192
-        # -- Happy:        MSE -> 0.00000000  RMSE -> 0.00000235  MAE -> 0.00000195
-        # -- Fear:         MSE -> 0.00000000  RMSE -> 0.00000225  MAE -> 0.00000184
-        # -- Global error: MSE -> 0.00000000  RMSE -> 0.00000226  MAE -> 0.00000187
-        # -- Explained variance score -> 1.00000000
-        # -- R2 score-> 1.00000000
-        # - Testing the text classifier model...
-        # - Computing evaluation metrics for the text classifier:
-        # -- Disgust:      MSE -> 0.57019746  RMSE -> 0.75511420  MAE -> 0.54662295
-        # -- Surprise:     MSE -> 0.67917048  RMSE -> 0.82411800  MAE -> 0.56613400
-        # -- Neutral:      MSE -> 0.49812895  RMSE -> 0.70578251  MAE -> 0.52954500
-        # -- Anger:        MSE -> 0.81948133  RMSE -> 0.90525208  MAE -> 0.62291246
-        # -- Sad:          MSE -> 0.60735851  RMSE -> 0.77933209  MAE -> 0.56441906
-        # -- Happy:        MSE -> 0.55032294  RMSE -> 0.74183755  MAE -> 0.54693816
-        # -- Fear:         MSE -> 0.64922295  RMSE -> 0.80574373  MAE -> 0.61840579
-        # -- Global error: MSE -> 0.62484038  RMSE -> 0.79046845  MAE -> 0.57071106
-        # -- Explained variance score -> 0.39920691
-        # -- R2 score-> 0.39425261
-        #----------------------------
         self.model = MultiOutputRegressor(svm.SVR(kernel= "rbf",\
-                                                  gamma = "scale", C = 5, epsilon= 1e-3, cache_size= 2000, max_iter= -1, tol = 1e-5))
-  
-        #----------------------------
-        #----------------------------
-        #----------------------------
-        #----------------------------
-        #----------------------------
-        #----------------------------
-        #----------------------------
+                                                  gamma = "scale", C = 5, epsilon= 1e-4, cache_size= 2000, max_iter= -1, tol = 1e-5))
+        # - Training the text classifier model...
+        # - Using the full dataset for training...
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.10972640  RMSE -> 0.33124975  MAE -> 0.04245848
+        # -- Surprise:     MSE -> 0.04602675  RMSE -> 0.21453846  MAE -> 0.03793087
+        # -- Neutral:      MSE -> 0.03004032  RMSE -> 0.17332145  MAE -> 0.03118618
+        # -- Anger:        MSE -> 0.04954111  RMSE -> 0.22257831  MAE -> 0.03512609
+        # -- Sad:          MSE -> 0.05785598  RMSE -> 0.24053270  MAE -> 0.04432290
+        # -- Happy:        MSE -> 0.04829081  RMSE -> 0.21975169  MAE -> 0.03961154
+        # -- Fear:         MSE -> 0.06316022  RMSE -> 0.25131698  MAE -> 0.04356229
+        # -- Global error: MSE -> 0.05780594  RMSE -> 0.24042866  MAE -> 0.03917119
+        # -- Explained variance score -> 0.94296737
+        # -- R2 score-> 0.94167403
+        # - Testing the text classifier model...
+        # - Computing evaluation metrics for the text classifier:
+        # -- Disgust:      MSE -> 0.69622562  RMSE -> 0.83440135  MAE -> 0.52792654
+        # -- Surprise:     MSE -> 0.70038943  RMSE -> 0.83689272  MAE -> 0.55796328
+        # -- Neutral:      MSE -> 0.49501726  RMSE -> 0.70357463  MAE -> 0.52640148
+        # -- Anger:        MSE -> 0.91329972  RMSE -> 0.95566716  MAE -> 0.63889260
+        # -- Sad:          MSE -> 0.62127248  RMSE -> 0.78820840  MAE -> 0.56550408
+        # -- Happy:        MSE -> 0.56738550  RMSE -> 0.75324996  MAE -> 0.54563259
+        # -- Fear:         MSE -> 0.65362400  RMSE -> 0.80847016  MAE -> 0.60561190
+        # -- Global error: MSE -> 0.66388772  RMSE -> 0.81479305  MAE -> 0.56684749
+        # -- Explained variance score -> 0.36242966
+        # -- R2 score-> 0.35639843
         # ----------------------------------------- end train test model tuning
         
         
